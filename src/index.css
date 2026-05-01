@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+:root {
+  --primary: #0ea5e9;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+/* Glassmorphism & Modern POS Styles */
+.glass {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark .glass {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.pos-card {
+  transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.2s;
+}
+
+.pos-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+}
+
+.cart-item {
+  transition: all 0.2s ease;
+}
+
+.receipt {
+  font-family: 'ui-monospace', SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.chart-container {
+  background: rgba(255,255,255,0.03);
+}
+
+/* Touch-friendly buttons for POS */
+.touch-btn {
+  min-height: 52px;
+  font-size: 15px;
+  transition: all 0.1s ease;
+}
+
+.touch-btn:active {
+  transform: scale(0.985);
+}
+
+/* Scanner styles */
+#scanner-container {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Offline indicator */
+.offline-badge {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .6; }
+}
+
+/* Table styles */
+.data-table th {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  font-size: 0.75rem;
+}
