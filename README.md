@@ -1,170 +1,147 @@
-# zim-kiosk-pos-system
+# ZIM Kiosk POS System
 
-A modern React + Vite Point of Sale (POS) system for Zimbabwe-based retail businesses, integrated with Supabase for real-time database management.
+Production-oriented multi-branch retail POS for Zimbabwean businesses.
 
-## Features
+## Architecture
 
-- **Product Management** - Barcode scanning, inventory tracking, stock management
-- **Sales Processing** - Fast checkout with multiple payment methods (cash, card, mobile, credit)
-- **Debtor Management** - Track customer credits and payments
-- **Multi-branch Support** - Manage multiple store locations
-- **Real-time Inventory** - Live stock updates and sync across branches
-- **Analytics Dashboard** - Sales trends, revenue reports, inventory insights
-- **Cashier Management** - Role-based access control (admin, manager, cashier)
-- **QR Code Scanning** - Quick product lookup via QR/barcode
+```text
+React 19 + TypeScript + Vite
+            |
+            | HTTPS / REST / JWT
+            v
+Django REST Framework
+            |
+            v
+MySQL 8 / InnoDB
+```
 
-## Tech Stack
+The browser never connects directly to MySQL. Django owns authentication, authorization, financial calculations, inventory, sales, payments, debtors and audit records.
 
-- **Frontend**: React 19, TypeScript, Tailwind CSS, Vite
-- **Database**: Supabase (PostgreSQL)
-- **Animations**: Framer Motion
-- **Charts**: Recharts
-- **Notifications**: Sonner Toast
-- **QR Scanning**: html5-qrcode
-- **Routing**: React Router v7
+## Core features
 
-## Quick Start
+- Barcode/QR product lookup
+- Fast POS checkout
+- Cash, EcoCash/mobile, card, bank transfer and credit payments
+- Split-payment capable payment model
+- Multi-branch inventory
+- Stock transaction audit trail
+- Customer debtors and ledger foundation
+- Role-based access control
+- USD, ZiG and ZAR transaction support
+- Server-side financial calculations using Decimal
+- Atomic sales with row-level inventory locking
+- Idempotent sale creation for offline retry safety
+- IndexedDB offline queue foundation
 
-### 1. Setup Supabase
+## Roles
 
-See [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for detailed instructions:
-- Create Supabase project
-- Add environment variables
-- Run database schema
-- Configure credentials
+- Super Admin
+- Branch Manager
+- Cashier
+- Storekeeper
+- Accountant
 
-### 2. Install Dependencies
+## Technology
+
+- Frontend: React 19, TypeScript, Vite, Tailwind CSS
+- Backend: Django 5.2, Django REST Framework
+- Database: MySQL 8 / InnoDB
+- Authentication: Django JWT
+- Barcode/QR: html5-qrcode
+- Charts: Recharts
+- Containers: Docker / Docker Compose
+- CI: GitHub Actions
+
+## Development
+
+### Frontend
 
 ```bash
 npm install
-```
-
-### 3. Development
-
-```bash
+npm run typecheck
+npm run build
 npm run dev
 ```
 
-### 4. Build
+Set:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000/api/v1
+```
+
+### Backend
 
 ```bash
-npm run build
+cd backend
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -r requirements/base.txt
+python manage.py makemigrations
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
 ```
 
-### 5. Preview
+Configure `backend/.env` from `backend/.env.example` with the MySQL credentials.
+
+### Docker
 
 ```bash
-npm run preview
+cp backend/.env.example .env
+# Set production-safe values before starting
+
+docker compose up --build
 ```
 
-## Database Schema
+## API
 
-The system includes 10 tables with proper relationships:
-- **products** - Inventory items with pricing and stock levels
-- **sales** - Transaction records
-- **sale_items** - Line items in each sale
-- **debtors** - Customer credit accounts
-- **debtor_transactions** - Payment history
-- **branches** - Store locations
-- **users** - Staff/cashier accounts
-- **notifications** - System alerts
-- **stock_transactions** - Inventory audit trail
-- **sync_logs** - Change tracking for sync
+Base URL:
 
-## Usage Examples
-
-### Add to Shopping Cart
-
-```typescript
-const handleScan = async (barcode) => {
-  const product = await getProductByBarcode(barcode);
-  addToCart(product, quantity);
-};
+```text
+/api/v1/
 ```
 
-### Process Sale
+Important endpoints:
 
-```typescript
-const processSale = async (items, paymentMethod) => {
-  const sale = await createSale({
-    total_amount: calculateTotal(items),
-    payment_method: paymentMethod,
-    currency: 'ZWL',
-    cashier_id: currentUser.id,
-    branch_id: currentBranch.id,
-  }, items);
-};
+```text
+GET  /health/
+POST /auth/login/
+POST /auth/refresh/
+GET  /auth/me/
+GET  /auth/users/
+GET  /products/
+GET  /branches/
+GET  /debtors/
+GET  /sales/
+POST /sales/create/
 ```
-
-### Record Debtor Payment
-
-```typescript
-const recordPayment = async (debtorId, amount) => {
-  await addTransaction({
-    debtor_id: debtorId,
-    transaction_type: 'payment',
-    amount: amount,
-  });
-};
-```
-
-## Environment Variables
-
-Create `.env.local`:
-
-```
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your_anon_key
-```
-
-## Project Structure
-
-```
-src/
-├── components/       # React components
-├── services/        # Supabase hooks and API calls
-├── utils/           # Utility functions
-├── App.tsx          # Main app component
-├── main.tsx         # Entry point
-└── index.css        # Global styles
-```
-
-## Key Hooks
-
-- `useProducts()` - Product CRUD and stock management
-- `useSales()` - Sale creation and tracking
-- `useDebtors()` - Debtor management and transactions
-- `useBranches()` - Branch information
-- `useUsers()` - Staff management
 
 ## Security
 
-- Row Level Security (RLS) enabled on all tables
-- Anon key restricted to read-only on sensitive data
-- Staff authentication via branch_id
-- Audit logging for all transactions
+- MySQL credentials are server-side only.
+- Production `DEBUG=False` requires `DJANGO_SECRET_KEY`.
+- JWT authentication is enforced by Django REST Framework.
+- Branch access is enforced server-side.
+- Financial totals are recalculated by Django.
+- Inventory rows are locked during sale transactions.
+- Sale requests support idempotency keys.
+- Secrets and `.env` files must never be committed.
 
-## Performance Optimizations
+## Testing
 
-- Database indexes on frequently queried fields
-- Pagination support for large datasets
-- Real-time subscriptions for live updates
-- Efficient stock update mechanisms
+CI runs frontend TypeScript/build checks and Django checks/tests against MySQL 8.4.
 
-## Future Enhancements
+Before merging:
 
-- Mobile app (React Native)
-- Email/SMS notifications
-- Advanced analytics and reporting
-- Inventory forecasting
-- Supplier management
-- Multi-language support
+```bash
+npm run typecheck
+npm run build
+cd backend
+python manage.py check
+python manage.py test
+```
 
-## Support & Contribution
+## Migration status
 
-For issues or suggestions, please create an issue in the repository.
-
-## License
-
-MIT License - Free to use and modify
-
+Supabase is no longer part of the application architecture. The frontend data services communicate with Django, and MySQL is the authoritative transactional database.
