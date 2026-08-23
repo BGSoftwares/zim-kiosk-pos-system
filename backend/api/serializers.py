@@ -7,6 +7,8 @@ from apps.debtors.models import Debtor
 
 
 class LoginSerializer(TokenObtainPairSerializer):
+    username_field = "email"
+
     def validate(self, attrs):
         email = attrs.get("email", "").strip().lower()
         password = attrs.get("password", "")
@@ -18,11 +20,7 @@ class LoginSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError("Invalid email or password.")
         self.user = user
         refresh = self.get_token(user)
-        return {
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-            "user": UserSerializer(user).data,
-        }
+        return {"access": str(refresh.access_token), "refresh": str(refresh), "user": UserSerializer(user).data}
 
     @classmethod
     def get_token(cls, user):
@@ -34,12 +32,33 @@ class LoginSerializer(TokenObtainPairSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False, min_length=8)
     branch_id = serializers.IntegerField(source="branch.id", read_only=True, allow_null=True)
+    branch = serializers.PrimaryKeyRelatedField(queryset=__import__("apps.branches.models", fromlist=["Branch"]).Branch.objects.all(), write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = User
-        fields = ["id", "email", "first_name", "last_name", "role", "phone", "branch_id", "is_active"]
+        fields = ["id", "email", "first_name", "last_name", "role", "phone", "branch_id", "branch", "password", "is_active"]
         read_only_fields = ["id", "branch_id"]
+
+    def create(self, validated_data):
+        password = validated_data.pop("password", None)
+        user = User(**validated_data)
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
+        user.save()
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop("password", None)
+        for key, value in validated_data.items():
+            setattr(instance, key, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
 
 
 class ProductSerializer(serializers.ModelSerializer):
