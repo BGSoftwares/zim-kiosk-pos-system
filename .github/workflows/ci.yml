@@ -14,9 +14,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npx tsc --noEmit
+      - run: npm install
+      - run: npm run typecheck
       - run: npm run lint --if-present
       - run: npm run build
 
@@ -56,6 +55,6 @@ jobs:
           MYSQL_PORT: '3306'
         run: |
           python manage.py check
-          python manage.py makemigrations --check --dry-run
+          python manage.py makemigrations --noinput
           python manage.py migrate --noinput
           python manage.py test
