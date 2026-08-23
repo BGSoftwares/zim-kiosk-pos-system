@@ -1,277 +1,109 @@
-import { supabase } from './supabase';
+import { api, getAccessToken, setAccessToken } from './api/client';
 
-// Types
 export interface AuthUser {
-  id: string;
+  id: number;
   email: string;
+  first_name?: string;
+  last_name?: string;
   role: string;
+  phone?: string;
+  branch_id?: number | null;
+  is_active?: boolean;
 }
 
 export interface AuthResponse {
   user: AuthUser | null;
-  profile: any;
+  profile: AuthUser | null;
   error: string | null;
 }
 
-/**
- * Login with email and password
- * @param email User email
- * @param password User password
- * @returns AuthResponse with user data or error
- */
+interface LoginApiResponse {
+  access: string;
+  refresh: string;
+  user: AuthUser;
+}
+
+const REFRESH_TOKEN_KEY = 'zim_kiosk_refresh_token';
+
+function saveRefreshToken(token: string) {
+  sessionStorage.setItem(REFRESH_TOKEN_KEY, token);
+}
+
+function clearTokens() {
+  setAccessToken(null);
+  sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
 export async function loginWithEmail(email: string, password: string): Promise<AuthResponse> {
   try {
-    // Sign in with Supabase
-    const { data: { user }, error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (signInError) {
-      return {
-        user: null,
-        profile: null,
-        error: signInError.message,
-      };
-    }
-
-    if (!user) {
-      return {
-        user: null,
-        profile: null,
-        error: 'No user returned from authentication',
-      };
-    }
-
-    // Fetch user profile
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (profileError && profileError.code !== 'PGRST116') {
-      return {
-        user: null,
-        profile: null,
-        error: profileError.message,
-      };
-    }
-
-    return {
-      user: {
-        id: user.id,
-        email: user.email || '',
-        role: profile?.role || 'user',
-      },
-      profile: profile || { id: user.id, email: user.email },
-      error: null,
-    };
-  } catch (err: any) {
-    return {
-      user: null,
-      profile: null,
-      error: err.message || 'An error occurred during login',
-    };
+    const response = await api.post<LoginApiResponse>('/auth/login/', { email, password });
+    setAccessToken(response.access);
+    saveRefreshToken(response.refresh);
+    return { user: response.user, profile: response.user, error: null };
+  } catch (err) {
+    clearTokens();
+    return { user: null, profile: null, error: err instanceof Error ? err.message : 'Login failed' };
   }
 }
 
-/**
- * Logout current user
- * @returns error message or null
- */
 export async function logout(): Promise<string | null> {
-  try {
-    const { error } = await supabase.auth.signOut();
-    return error ? error.message : null;
-  } catch (err: any) {
-    return err.message || 'An error occurred during logout';
-  }
+  clearTokens();
+  return null;
 }
 
-/**
- * Get current authenticated user
- * @returns AuthUser or null
- */
 export async function getCurrentUser(): Promise<AuthUser | null> {
   try {
-    const { data: { user }, error } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      return null;
+    if (!getAccessToken()) {
+      await refreshAccessToken();
     }
-
-    // Fetch profile for role information
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    return {
-      id: user.id,
-      email: user.email || '',
-      role: profile?.role || 'user',
-    };
-  } catch (err) {
+    return await api.get<AuthUser>('/auth/me/');
+  } catch {
+    clearTokens();
     return null;
   }
 }
 
-/**
- * Get current session
- * @returns Supabase session or null
- */
-export async function getCurrentSession() {
+export async function getCurrentSession(): Promise<{ accessToken: string; refreshToken: string } | null> {
+  const accessToken = getAccessToken();
+  const refreshToken = sessionStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!accessToken || !refreshToken) return null;
+  return { accessToken, refreshToken };
+}
+
+export async function refreshAccessToken(): Promise<string | null> {
+  const refresh = sessionStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!refresh) return null;
   try {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    return session;
-  } catch (err) {
+    const response = await api.post<{ access: string }>('/auth/refresh/', { refresh });
+    setAccessToken(response.access);
+    return response.access;
+  } catch {
+    clearTokens();
     return null;
   }
 }
 
-/**
- * Validate password
- * @param password Password to validate
- * @returns true if valid, false otherwise
- */
 export function validatePassword(password: string): boolean {
-  // At least 6 characters, 1 uppercase, 1 number
-  const minLength = password.length >= 6;
-  const hasUppercase = /[A-Z]/.test(password);
-  const hasNumber = /[0-9]/.test(password);
-
-  return minLength && hasUppercase && hasNumber;
+  return password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password);
 }
 
-/**
- * Validate email
- * @param email Email to validate
- * @returns true if valid, false otherwise
- */
 export function validateEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-/**
- * Get password validation requirements
- * @returns Array of requirements
- */
 export function getPasswordRequirements(): string[] {
-  return [
-    'At least 6 characters long',
-    'At least one uppercase letter (A-Z)',
-    'At least one number (0-9)',
-  ];
+  return ['At least 8 characters long', 'At least one uppercase letter', 'At least one lowercase letter', 'At least one number'];
 }
 
-/**
- * Sign up a new user (admin only)
- * @param email New user email
- * @param password New user password
- * @param userData Additional user data (name, role, etc)
- * @returns AuthResponse with new user or error
- */
-export async function signUpUser(
-  email: string,
-  password: string,
-  userData?: {
-    fullName?: string;
-    role?: string;
-    branchId?: string;
-  }
-): Promise<AuthResponse> {
-  try {
-    // Sign up user
-    const { data: { user }, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-
-    if (signUpError) {
-      return {
-        user: null,
-        profile: null,
-        error: signUpError.message,
-      };
-    }
-
-    if (!user) {
-      return {
-        user: null,
-        profile: null,
-        error: 'No user returned from signup',
-      };
-    }
-
-    // Create profile
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .insert([
-        {
-          id: user.id,
-          email: user.email,
-          full_name: userData?.fullName || '',
-          role: userData?.role || 'user',
-          branch_id: userData?.branchId || null,
-          active: true,
-        },
-      ])
-      .select()
-      .single();
-
-    if (profileError) {
-      return {
-        user: null,
-        profile: null,
-        error: profileError.message,
-      };
-    }
-
-    return {
-      user: {
-        id: user.id,
-        email: user.email || '',
-        role: userData?.role || 'user',
-      },
-      profile,
-      error: null,
-    };
-  } catch (err: any) {
-    return {
-      user: null,
-      profile: null,
-      error: err.message || 'An error occurred during signup',
-    };
-  }
+export async function signUpUser(): Promise<AuthResponse> {
+  return { user: null, profile: null, error: 'User creation is restricted to authorized Django administration endpoints.' };
 }
 
-/**
- * Update user profile
- * @param userId User ID
- * @param updates Profile updates
- * @returns Updated profile or error
- */
-export async function updateUserProfile(
-  userId: string,
-  updates: Record<string, any>
-): Promise<{ profile: any; error: string | null }> {
+export async function updateUserProfile(userId: string, updates: Record<string, unknown>): Promise<{ profile: AuthUser | null; error: string | null }> {
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', userId)
-      .select()
-      .single();
-
-    if (error) {
-      return { profile: null, error: error.message };
-    }
-
-    return { profile: data, error: null };
-  } catch (err: any) {
-    return { profile: null, error: err.message || 'An error occurred during update' };
+    const profile = await api.patch<AuthUser>(`/auth/users/${userId}/`, updates);
+    return { profile, error: null };
+  } catch (err) {
+    return { profile: null, error: err instanceof Error ? err.message : 'Profile update failed' };
   }
 }
