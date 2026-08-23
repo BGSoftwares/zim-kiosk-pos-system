@@ -12,7 +12,7 @@ from apps.products.models import Product
 from apps.sales.models import Sale
 from apps.sales.services import create_sale
 from apps.debtors.models import Debtor
-from .serializers import CreateSaleSerializer, DebtorSerializer, LoginSerializer, ProductSerializer, SaleSerializer, UserSerializer
+from .serializers import BranchSerializer, CreateSaleSerializer, DebtorSerializer, LoginSerializer, ProductSerializer, SaleSerializer, UserSerializer
 
 
 class IsManagementRole(BasePermission):
@@ -58,14 +58,15 @@ class ProductViewSet(viewsets.ModelViewSet):
 
 
 class BranchViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = BranchSerializer
     permission_classes = [IsAuthenticated]
     queryset = Branch.objects.filter(is_active=True).order_by("name")
 
-    def list(self, request, *args, **kwargs):
-        branches = self.get_queryset()
-        if request.user.role != User.Role.SUPER_ADMIN and request.user.branch_id:
-            branches = branches.filter(id=request.user.branch_id)
-        return Response([{"id": b.id, "code": b.code, "name": b.name, "address": b.address, "phone": b.phone, "currency": b.currency} for b in branches])
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.user.role != User.Role.SUPER_ADMIN and self.request.user.branch_id:
+            qs = qs.filter(id=self.request.user.branch_id)
+        return qs
 
 
 class DebtorViewSet(viewsets.ModelViewSet):
