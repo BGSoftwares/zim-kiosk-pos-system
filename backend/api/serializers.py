@@ -2,6 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from apps.accounts.models import User
+from apps.branches.models import Branch
 from apps.products.models import Product
 from apps.debtors.models import Debtor
 
@@ -34,7 +35,7 @@ class LoginSerializer(TokenObtainPairSerializer):
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, min_length=8)
     branch_id = serializers.IntegerField(source="branch.id", read_only=True, allow_null=True)
-    branch = serializers.PrimaryKeyRelatedField(queryset=__import__("apps.branches.models", fromlist=["Branch"]).Branch.objects.all(), write_only=True, required=False, allow_null=True)
+    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.all(), write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = User
