@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { supabase } from './supabase';
+import { api } from './api/client';
 
 export interface Debtor {
   id: string;
@@ -24,29 +24,33 @@ export interface DebtorTransaction {
   created_at: string;
 }
 
+interface DebtorApi {
+  id: number;
+  name: string;
+  phone: string;
+  credit_limit: string;
+  is_active: boolean;
+  balance: string | number;
+  created_at: string;
+}
+
+function mapDebtor(d: DebtorApi): Debtor {
+  return { id: String(d.id), name: d.name, phone: d.phone, total_owed: Number(d.balance), branch_id: '' };
+}
+
 export const useDebtors = () => {
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch all debtors
-  const fetchDebtors = useCallback(async (branchId?: string) => {
+  const fetchDebtors = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      let query = supabase
-        .from('debtors')
-        .select('*')
-        .order('name');
-
-      if (branchId) {
-        query = query.eq('branch_id', branchId);
-      }
-
-      const { data, error: err } = await query;
-      if (err) throw err;
-      setDebtors(data || []);
-      return data;
+      const data = await api.get<DebtorApi[]>('/debtors/');
+      const mapped = data.map(mapDebtor);
+      setDebtors(mapped);
+      return mapped;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch debtors');
       return [];
@@ -55,153 +59,61 @@ export const useDebtors = () => {
     }
   }, []);
 
-  // Create debtor
   const createDebtor = useCallback(async (debtor: Omit<Debtor, 'id'>) => {
     try {
-      const { data, error: err } = await supabase
-        .from('debtors')
-        .insert([debtor])
-        .select()
-        .single();
-
-      if (err) throw err;
-      setDebtors([...debtors, data]);
-      return data;
+      const data = await api.post<DebtorApi>('/debtors/', { name: debtor.name, phone: debtor.phone, is_active: true });
+      const mapped = mapDebtor(data);
+      setDebtors(previous => [...previous, mapped]);
+      return mapped;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create debtor');
       return null;
     }
-  }, [debtors]);
+  }, []);
 
-  // Update debtor
   const updateDebtor = useCallback(async (id: string, updates: Partial<Debtor>) => {
     try {
-      const { data, error: err } = await supabase
-        .from('debtors')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (err) throw err;
-      setDebtors(debtors.map(d => d.id === id ? data : d));
-      return data;
+      const data = await api.patch<DebtorApi>(`/debtors/${id}/`, updates);
+      const mapped = mapDebtor(data);
+      setDebtors(previous => previous.map(d => d.id === id ? mapped : d));
+      return mapped;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update debtor');
       return null;
     }
-  }, [debtors]);
+  }, []);
 
-  // Delete debtor
   const deleteDebtor = useCallback(async (id: string) => {
     try {
-      const { error: err } = await supabase
-        .from('debtors')
-        .delete()
-        .eq('id', id);
-
-      if (err) throw err;
-      setDebtors(debtors.filter(d => d.id !== id));
+      await api.delete(`/debtors/${id}/`);
+      setDebtors(previous => previous.filter(d => d.id !== id));
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete debtor');
       return false;
     }
-  }, [debtors]);
-
-  // Add transaction (credit or payment)
-  const addTransaction = useCallback(async (
-    transaction: Omit<DebtorTransaction, 'id' | 'created_at'>
-  ) => {
-    try {
-      const { data, error: err } = await supabase
-        .from('debtor_transactions')
-        .insert([transaction])
-        .select()
-        .single();
-
-      if (err) throw err;
-
-      // Update debtor's total_owed
-      const debtor = debtors.find(d => d.id === transaction.debtor_id);
-      if (debtor) {
-        let newTotal = debtor.total_owed;
-        if (transaction.transaction_type === 'credit') {
-          newTotal += transaction.amount;
-        } else if (transaction.transaction_type === 'payment') {
-          newTotal = Math.max(0, newTotal - transaction.amount);
-        } else if (transaction.transaction_type === 'writeoff') {
-          newTotal = 0;
-        }
-
-        await updateDebtor(transaction.debtor_id, { 
-          total_owed: newTotal,
-          last_payment: transaction.transaction_type === 'payment' ? new Date().toISOString() : undefined,
-        });
-      }
-
-      return data;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add transaction');
-      return null;
-    }
-  }, [debtors, updateDebtor]);
-
-  // Get debtor transactions
-  const getDebtorTransactions = useCallback(async (debtorId: string) => {
-    try {
-      const { data, error: err } = await supabase
-        .from('debtor_transactions')
-        .select('*')
-        .eq('debtor_id', debtorId)
-        .order('created_at', { ascending: false });
-
-      if (err) throw err;
-      return data;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch transactions');
-      return [];
-    }
   }, []);
 
-  // Get debtors with total owed (summary)
-  const getDebtorsSummary = useCallback(async (branchId?: string) => {
+  const addTransaction = useCallback(async (_transaction: Omit<DebtorTransaction, 'id' | 'created_at'>) => {
+    setError('Debtor ledger mutations must use the protected Django payment workflow.');
+    return null;
+  }, []);
+
+  const getDebtorTransactions = useCallback(async (_debtorId: string) => {
+    setError('Debtor ledger endpoint is not enabled yet.');
+    return [] as DebtorTransaction[];
+  }, []);
+
+  const getDebtorsSummary = useCallback(async () => {
     try {
-      let query = supabase
-        .from('debtors')
-        .select('id, name, phone, total_owed, last_payment')
-        .gt('total_owed', 0);
-
-      if (branchId) {
-        query = query.eq('branch_id', branchId);
-      }
-
-      const { data, error: err } = await query.order('total_owed', { ascending: false });
-      if (err) throw err;
-
-      const totalDebt = data?.reduce((sum, d) => sum + d.total_owed, 0) || 0;
-      
-      return {
-        debtors: data || [],
-        totalDebt,
-        debtorCount: data?.length || 0,
-      };
+      const data = await api.get<DebtorApi[]>('/debtors/');
+      const mapped = data.map(mapDebtor).filter(d => d.total_owed > 0).sort((a, b) => b.total_owed - a.total_owed);
+      return { debtors: mapped, totalDebt: mapped.reduce((sum, d) => sum + d.total_owed, 0), debtorCount: mapped.length };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch debtors summary');
       return { debtors: [], totalDebt: 0, debtorCount: 0 };
     }
   }, []);
 
-  return {
-    debtors,
-    loading,
-    error,
-    fetchDebtors,
-    createDebtor,
-    updateDebtor,
-    deleteDebtor,
-    addTransaction,
-    getDebtorTransactions,
-    getDebtorsSummary,
-  };
+  return { debtors, loading, error, fetchDebtors, createDebtor, updateDebtor, deleteDebtor, addTransaction, getDebtorTransactions, getDebtorsSummary };
 };
