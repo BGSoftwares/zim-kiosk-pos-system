@@ -1,5 +1,4 @@
 name: CI
-
 on:
   push:
     branches: [main, 'feat/**']
@@ -12,9 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+        with: { node-version: 20, cache: npm }
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run lint --if-present
@@ -30,19 +27,16 @@ jobs:
           MYSQL_USER: zim_kiosk
           MYSQL_PASSWORD: zim_kiosk
           MYSQL_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
+        ports: ['3306:3306']
         options: >-
           --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
           --health-interval=10s --health-timeout=5s --health-retries=10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: python -m pip install --upgrade pip
+        with: { python-version: '3.12' }
       - run: pip install -r backend/requirements/base.txt
-      - name: Django checks
+      - name: Django checks and tests
         working-directory: backend
         env:
           DJANGO_SECRET_KEY: ci-only-secret
@@ -54,5 +48,7 @@ jobs:
           MYSQL_PORT: 3306
         run: |
           python manage.py check
+          python manage.py makemigrations
           python manage.py makemigrations --check --dry-run
+          python manage.py migrate --noinput
           python manage.py test
