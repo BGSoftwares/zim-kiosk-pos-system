@@ -63,6 +63,13 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
+class BranchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Branch
+        fields = ["id", "code", "name", "address", "phone", "currency", "is_active", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+
 class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
