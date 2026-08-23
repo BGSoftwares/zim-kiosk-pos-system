@@ -1,25 +1,26 @@
-from django.contrib.auth import authenticate
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from apps.accounts.models import User
 from apps.products.models import Product
+from apps.debtors.models import Debtor
 
 
 class LoginSerializer(TokenObtainPairSerializer):
-    username_field = User.EMAIL_FIELD
-
     def validate(self, attrs):
-        email = attrs.get("email")
-        password = attrs.get("password")
-        user = authenticate(request=self.context.get("request"), username=email, password=password)
-        if not user or not user.is_active:
+        email = attrs.get("email", "").strip().lower()
+        password = attrs.get("password", "")
+        try:
+            user = User.objects.select_related("branch").get(email__iexact=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Invalid email or password.")
+        if not user.is_active or not user.check_password(password):
             raise serializers.ValidationError("Invalid email or password.")
         self.user = user
-        data = self.get_token(user)
+        refresh = self.get_token(user)
         return {
-            "access": str(data.access_token),
-            "refresh": str(data),
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
             "user": UserSerializer(user).data,
         }
 
@@ -33,7 +34,7 @@ class LoginSerializer(TokenObtainPairSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    branch_id = serializers.UUIDField(source="branch.id", read_only=True, allow_null=True)
+    branch_id = serializers.IntegerField(source="branch.id", read_only=True, allow_null=True)
 
     class Meta:
         model = User
@@ -100,7 +101,6 @@ class DebtorSerializer(serializers.ModelSerializer):
     balance = serializers.SerializerMethodField()
 
     class Meta:
-        from apps.debtors.models import Debtor
         model = Debtor
         fields = ["id", "name", "phone", "credit_limit", "is_active", "balance", "created_at"]
         read_only_fields = ["id", "balance", "created_at"]
