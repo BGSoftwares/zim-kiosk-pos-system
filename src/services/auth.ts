@@ -1,14 +1,19 @@
 import { api, getAccessToken, setAccessToken } from './api/client';
 
 export interface AuthUser {
-  id: number;
+  id: string;
   email: string;
   first_name?: string;
   last_name?: string;
   role: string;
   phone?: string;
-  branch_id?: number | null;
+  branch_id?: string | null;
   is_active?: boolean;
+}
+
+interface ApiAuthUser extends Omit<AuthUser, 'id' | 'branch_id'> {
+  id: number;
+  branch_id?: number | null;
 }
 
 export interface AuthResponse {
@@ -20,10 +25,14 @@ export interface AuthResponse {
 interface LoginApiResponse {
   access: string;
   refresh: string;
-  user: AuthUser;
+  user: ApiAuthUser;
 }
 
 const REFRESH_TOKEN_KEY = 'zim_kiosk_refresh_token';
+
+function normalizeUser(user: ApiAuthUser): AuthUser {
+  return { ...user, id: String(user.id), branch_id: user.branch_id == null ? null : String(user.branch_id) };
+}
 
 function saveRefreshToken(token: string) {
   sessionStorage.setItem(REFRESH_TOKEN_KEY, token);
@@ -39,7 +48,8 @@ export async function loginWithEmail(email: string, password: string): Promise<A
     const response = await api.post<LoginApiResponse>('/auth/login/', { email: email.trim().toLowerCase(), password });
     setAccessToken(response.access);
     saveRefreshToken(response.refresh);
-    return { user: response.user, profile: response.user, error: null };
+    const user = normalizeUser(response.user);
+    return { user, profile: user, error: null };
   } catch (err) {
     clearTokens();
     return { user: null, profile: null, error: err instanceof Error ? err.message : 'Login failed' };
@@ -53,10 +63,9 @@ export async function logout(): Promise<string | null> {
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
   try {
-    if (!getAccessToken()) {
-      await refreshAccessToken();
-    }
-    return await api.get<AuthUser>('/auth/me/');
+    if (!getAccessToken()) await refreshAccessToken();
+    const user = await api.get<ApiAuthUser>('/auth/me/');
+    return normalizeUser(user);
   } catch {
     clearTokens();
     return null;
@@ -103,16 +112,13 @@ export async function signUpUser(
 ): Promise<AuthResponse> {
   try {
     const names = (userData?.fullName || '').trim().split(/\s+/).filter(Boolean);
-    const response = await api.post<AuthUser>('/auth/users/', {
-      email: email.trim().toLowerCase(),
-      password,
-      first_name: names[0] || '',
-      last_name: names.slice(1).join(' '),
-      role: userData?.role || 'CASHIER',
-      branch: userData?.branchId ? Number(userData.branchId) : null,
-      is_active: true,
+    const response = await api.post<ApiAuthUser>('/auth/users/', {
+      email: email.trim().toLowerCase(), password,
+      first_name: names[0] || '', last_name: names.slice(1).join(' '),
+      role: userData?.role || 'CASHIER', branch: userData?.branchId ? Number(userData.branchId) : null, is_active: true,
     });
-    return { user: response, profile: response, error: null };
+    const user = normalizeUser(response);
+    return { user, profile: user, error: null };
   } catch (err) {
     return { user: null, profile: null, error: err instanceof Error ? err.message : 'User creation failed' };
   }
@@ -120,8 +126,8 @@ export async function signUpUser(
 
 export async function updateUserProfile(userId: string, updates: Record<string, unknown>): Promise<{ profile: AuthUser | null; error: string | null }> {
   try {
-    const profile = await api.patch<AuthUser>(`/auth/users/${userId}/`, updates);
-    return { profile, error: null };
+    const response = await api.patch<ApiAuthUser>(`/auth/users/${userId}/`, updates);
+    return { profile: normalizeUser(response), error: null };
   } catch (err) {
     return { profile: null, error: err instanceof Error ? err.message : 'Profile update failed' };
   }
