@@ -1,5 +1,6 @@
 from decimal import Decimal
 from django.db import transaction
+from django.core.exceptions import ObjectDoesNotExist
 
 from apps.inventory.models import Inventory, StockTransaction
 from apps.payments.models import Payment
@@ -28,7 +29,11 @@ def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, id
             raise ValueError("A product may only appear once in a sale")
         seen_products.add(product_id)
 
-        inventory = Inventory.objects.select_for_update().select_related("product").get(product_id=product_id, branch=branch)
+        try:
+            inventory = Inventory.objects.select_for_update().select_related("product").get(product_id=product_id, branch=branch)
+        except ObjectDoesNotExist:
+            raise ValueError(f"Product {product_id} has no inventory record at this branch")
+
         quantity = Decimal(str(item["quantity"]))
         if quantity <= 0:
             raise ValueError("Quantity must be greater than zero")
@@ -63,13 +68,7 @@ def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, id
     )
 
     for inventory, quantity, unit_price, line_total in prepared:
-        SaleItem.objects.create(
-            sale=sale,
-            product=inventory.product,
-            quantity=quantity,
-            unit_price=unit_price,
-            line_total=line_total,
-        )
+        SaleItem.objects.create(sale=sale, product=inventory.product, quantity=quantity, unit_price=unit_price, line_total=line_total)
         inventory.quantity -= quantity
         inventory.save(update_fields=["quantity", "updated_at"])
         StockTransaction.objects.create(
