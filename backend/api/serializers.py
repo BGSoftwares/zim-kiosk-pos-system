@@ -44,7 +44,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)
-        user = User(**validated_data)
+        email = validated_data.get("email", "").strip().lower()
+        user = User(**validated_data, username=email)
         if password:
             user.set_password(password)
         else:
