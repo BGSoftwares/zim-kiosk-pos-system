@@ -46,8 +46,14 @@ class ProductViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         q = self.request.query_params.get("q")
+        barcode = self.request.query_params.get("barcode")
+        sku = self.request.query_params.get("sku")
         if q:
             queryset = queryset.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(barcode__icontains=q))
+        if barcode:
+            queryset = queryset.filter(barcode=barcode)
+        if sku:
+            queryset = queryset.filter(sku=sku)
         return queryset
 
 
