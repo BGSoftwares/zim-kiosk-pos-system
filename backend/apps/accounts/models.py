@@ -11,4 +11,4 @@ class User(AbstractUser):
 
     role = models.CharField(max_length=30, choices=Role.choices, default=Role.CASHIER)
     phone = models.CharField(max_length=30, blank=True)
-    is_active = models.BooleanField(default=True)
+    branch = models.ForeignKey("branches.Branch", null=True, blank=True, on_delete=models.PROTECT, related_name="users")
