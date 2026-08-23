@@ -1,15 +1,14 @@
-from django.urls import path
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
+from .views import LoginView, ProductViewSet, health
 
-
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def health(request):
-    return Response({"status": "ok", "service": "zim-kiosk-api"})
-
+router = DefaultRouter()
+router.register("products", ProductViewSet, basename="product")
 
 urlpatterns = [
     path("health/", health, name="health"),
+    path("auth/login/", LoginView.as_view(), name="login"),
+    path("auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("", include(router.urls)),
 ]
