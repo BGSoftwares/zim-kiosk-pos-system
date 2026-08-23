@@ -1,11 +1,14 @@
 import { useState, useCallback } from 'react';
-import { supabase } from './supabase';
+import { api } from './api/client';
 
 export interface Sale {
   id: string;
-  sale_date: string;
-  total_amount: number;
-  payment_method: 'cash' | 'card' | 'mobile' | 'credit';
+  receipt_number?: string;
+  sale_date?: string;
+  created_at?: string;
+  total_amount?: number;
+  total?: number;
+  payment_method?: 'cash' | 'card' | 'mobile' | 'credit';
   currency: string;
   cashier_id: string;
   branch_id: string;
@@ -23,35 +26,61 @@ export interface SaleItem {
   subtotal: number;
 }
 
+interface SaleApiResponse {
+  id: number;
+  receipt_number: string;
+  branch_id: number;
+  cashier_id: number;
+  currency: string;
+  exchange_rate: string;
+  subtotal: string;
+  discount: string;
+  tax: string;
+  total: string;
+  status: string;
+  created_at: string;
+  items: Array<{
+    product_id: number;
+    product_name: string;
+    quantity: string;
+    unit_price: string;
+    discount: string;
+    tax: string;
+    line_total: string;
+  }>;
+}
+
+function mapSale(sale: SaleApiResponse): Sale {
+  return {
+    id: String(sale.id),
+    receipt_number: sale.receipt_number,
+    sale_date: sale.created_at,
+    created_at: sale.created_at,
+    total_amount: Number(sale.total),
+    total: Number(sale.total),
+    currency: sale.currency,
+    cashier_id: String(sale.cashier_id),
+    branch_id: String(sale.branch_id),
+  };
+}
+
 export const useSales = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch all sales
   const fetchSales = useCallback(async (filters?: { start_date?: string; end_date?: string; branch_id?: string }) => {
     setLoading(true);
     setError(null);
     try {
-      let query = supabase
-        .from('sales')
-        .select('*')
-        .order('sale_date', { ascending: false });
-
-      if (filters?.start_date) {
-        query = query.gte('sale_date', filters.start_date);
-      }
-      if (filters?.end_date) {
-        query = query.lte('sale_date', filters.end_date);
-      }
-      if (filters?.branch_id) {
-        query = query.eq('branch_id', filters.branch_id);
-      }
-
-      const { data, error: err } = await query;
-      if (err) throw err;
-      setSales(data || []);
-      return data;
+      const params = new URLSearchParams();
+      if (filters?.start_date) params.set('created_at__gte', filters.start_date);
+      if (filters?.end_date) params.set('created_at__lte', filters.end_date);
+      if (filters?.branch_id) params.set('branch_id', filters.branch_id);
+      const data = await api.get<SaleApiResponse[]>(`/sales/${params.toString() ? `?${params}` : ''}`);
+      const mapped = data.map(mapSale);
+      setSales(mapped);
+      return mapped;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch sales');
       return [];
@@ -60,64 +89,30 @@ export const useSales = () => {
     }
   }, []);
 
-  // Create a sale with items
   const createSale = useCallback(async (
-    sale: Omit<Sale, 'id'>,
-    items: Omit<SaleItem, 'id' | 'sale_id'>[]
+    sale: Omit<Sale, 'id'> & { exchange_rate?: number; receipt_number?: string; discount?: number; idempotency_key?: string },
+    items: Omit<SaleItem, 'id' | 'sale_id'>[],
   ) => {
     setLoading(true);
     setError(null);
     try {
-      // Create the sale
-      const { data: saleData, error: saleErr } = await supabase
-        .from('sales')
-        .insert([sale])
-        .select()
-        .single();
-
-      if (saleErr) throw saleErr;
-
-      // Create sale items
-      const itemsWithSaleId = items.map(item => ({
-        ...item,
-        sale_id: saleData.id,
-      }));
-
-      const { error: itemsErr } = await supabase
-        .from('sale_items')
-        .insert(itemsWithSaleId);
-
-      if (itemsErr) throw itemsErr;
-
-      // Update stock for each item
-      for (const item of items) {
-        const { data: product } = await supabase
-          .from('products')
-          .select('stock')
-          .eq('id', item.product_id)
-          .single();
-
-        if (product) {
-          const newStock = product.stock - item.quantity;
-          await supabase
-            .from('products')
-            .update({ stock: newStock })
-            .eq('id', item.product_id);
-
-          // Log stock transaction
-          await supabase
-            .from('stock_transactions')
-            .insert([{
-              product_id: item.product_id,
-              transaction_type: 'sale',
-              quantity_change: -item.quantity,
-              reference_id: saleData.id,
-              notes: `Sale transaction`,
-            }]);
-        }
-      }
-
-      return saleData;
+      const idempotencyKey = sale.idempotency_key || crypto.randomUUID();
+      const response = await api.post<SaleApiResponse>('/sales/create/', {
+        currency: sale.currency,
+        exchange_rate: sale.exchange_rate ?? 1,
+        idempotency_key: idempotencyKey,
+        receipt_number: sale.receipt_number || `SALE-${Date.now()}`,
+        discount: sale.discount ?? 0,
+        items: items.map(item => ({ product_id: Number(item.product_id), quantity: item.quantity })),
+        payments: [{
+          method: sale.payment_method === 'mobile' ? 'ECOCASH' : sale.payment_method === 'card' ? 'CARD' : sale.payment_method === 'credit' ? 'CREDIT' : 'CASH',
+          amount: sale.total_amount ?? sale.total ?? 0,
+          currency: sale.currency,
+        }],
+      });
+      const mapped = mapSale(response);
+      setSales(previous => [mapped, ...previous]);
+      return mapped;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create sale');
       return null;
@@ -126,73 +121,44 @@ export const useSales = () => {
     }
   }, []);
 
-  // Get sale with items
   const getSaleWithItems = useCallback(async (saleId: string) => {
     try {
-      const { data: sale, error: saleErr } = await supabase
-        .from('sales')
-        .select('*')
-        .eq('id', saleId)
-        .single();
-
-      if (saleErr) throw saleErr;
-
-      const { data: items, error: itemsErr } = await supabase
-        .from('sale_items')
-        .select('*')
-        .eq('sale_id', saleId);
-
-      if (itemsErr) throw itemsErr;
-
-      return { sale, items };
+      const sale = await api.get<SaleApiResponse>(`/sales/${saleId}/`);
+      return {
+        sale: mapSale(sale),
+        items: sale.items.map((item, index) => ({
+          id: `${sale.id}-${index}`,
+          sale_id: String(sale.id),
+          product_id: String(item.product_id),
+          quantity: Number(item.quantity),
+          unit_price: Number(item.unit_price),
+          discount: Number(item.discount),
+          subtotal: Number(item.line_total),
+        })),
+      };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch sale details');
       return null;
     }
   }, []);
 
-  // Get daily sales summary
   const getDailySalesSummary = useCallback(async (date: string, branchId?: string) => {
     try {
-      let query = supabase
-        .from('sales')
-        .select('total_amount, payment_method')
-        .gte('sale_date', `${date}T00:00:00`)
-        .lte('sale_date', `${date}T23:59:59`);
-
-      if (branchId) {
-        query = query.eq('branch_id', branchId);
-      }
-
-      const { data, error: err } = await query;
-      if (err) throw err;
-
-      const summary = {
-        totalSales: 0,
-        totalItems: 0,
-        byPaymentMethod: {} as Record<string, number>,
-      };
-
-      data?.forEach(sale => {
-        summary.totalSales += sale.total_amount;
-        summary.byPaymentMethod[sale.payment_method] = 
-          (summary.byPaymentMethod[sale.payment_method] || 0) + sale.total_amount;
+      const salesForDay = await fetchSales({ start_date: `${date}T00:00:00`, end_date: `${date}T23:59:59`, branch_id: branchId });
+      const byPaymentMethod: Record<string, number> = {};
+      let totalSales = 0;
+      salesForDay.forEach(sale => {
+        const amount = sale.total_amount ?? sale.total ?? 0;
+        totalSales += amount;
+        const method = sale.payment_method || 'unknown';
+        byPaymentMethod[method] = (byPaymentMethod[method] || 0) + amount;
       });
-
-      return summary;
+      return { totalSales, totalItems: 0, byPaymentMethod };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch sales summary');
       return null;
     }
-  }, []);
+  }, [fetchSales]);
 
-  return {
-    sales,
-    loading,
-    error,
-    fetchSales,
-    createSale,
-    getSaleWithItems,
-    getDailySalesSummary,
-  };
+  return { sales, loading, error, fetchSales, createSale, getSaleWithItems, getDailySalesSummary };
 };
