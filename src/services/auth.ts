@@ -36,7 +36,7 @@ function clearTokens() {
 
 export async function loginWithEmail(email: string, password: string): Promise<AuthResponse> {
   try {
-    const response = await api.post<LoginApiResponse>('/auth/login/', { email, password });
+    const response = await api.post<LoginApiResponse>('/auth/login/', { email: email.trim().toLowerCase(), password });
     setAccessToken(response.access);
     saveRefreshToken(response.refresh);
     return { user: response.user, profile: response.user, error: null };
@@ -64,10 +64,11 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 }
 
 export async function getCurrentSession(): Promise<{ accessToken: string; refreshToken: string } | null> {
-  const accessToken = getAccessToken();
   const refreshToken = sessionStorage.getItem(REFRESH_TOKEN_KEY);
-  if (!accessToken || !refreshToken) return null;
-  return { accessToken, refreshToken };
+  if (!refreshToken) return null;
+  if (!getAccessToken()) await refreshAccessToken();
+  const accessToken = getAccessToken();
+  return accessToken ? { accessToken, refreshToken } : null;
 }
 
 export async function refreshAccessToken(): Promise<string | null> {
@@ -95,8 +96,26 @@ export function getPasswordRequirements(): string[] {
   return ['At least 8 characters long', 'At least one uppercase letter', 'At least one lowercase letter', 'At least one number'];
 }
 
-export async function signUpUser(): Promise<AuthResponse> {
-  return { user: null, profile: null, error: 'User creation is restricted to authorized Django administration endpoints.' };
+export async function signUpUser(
+  email: string,
+  password: string,
+  userData?: { fullName?: string; role?: string; branchId?: string },
+): Promise<AuthResponse> {
+  try {
+    const names = (userData?.fullName || '').trim().split(/\s+/).filter(Boolean);
+    const response = await api.post<AuthUser>('/auth/users/', {
+      email: email.trim().toLowerCase(),
+      password,
+      first_name: names[0] || '',
+      last_name: names.slice(1).join(' '),
+      role: userData?.role || 'CASHIER',
+      branch: userData?.branchId ? Number(userData.branchId) : null,
+      is_active: true,
+    });
+    return { user: response, profile: response, error: null };
+  } catch (err) {
+    return { user: null, profile: null, error: err instanceof Error ? err.message : 'User creation failed' };
+  }
 }
 
 export async function updateUserProfile(userId: string, updates: Record<string, unknown>): Promise<{ profile: AuthUser | null; error: string | null }> {
