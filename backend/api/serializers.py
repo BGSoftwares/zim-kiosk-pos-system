@@ -5,6 +5,7 @@ from apps.accounts.models import User
 from apps.branches.models import Branch
 from apps.products.models import Product
 from apps.debtors.models import Debtor
+from apps.inventory.models import Inventory
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -19,7 +20,6 @@ class LoginSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError("Invalid email or password.")
         if not user.is_active or not user.check_password(password):
             raise serializers.ValidationError("Invalid email or password.")
-        self.user = user
         refresh = self.get_token(user)
         return {"access": str(refresh.access_token), "refresh": str(refresh), "user": UserSerializer(user).data}
 
@@ -75,6 +75,19 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = ["id", "sku", "barcode", "name", "category", "cost_price", "selling_price", "tax_rate", "unit", "is_active"]
         read_only_fields = ["id"]
+
+
+class InventorySerializer(serializers.ModelSerializer):
+    product_id = serializers.IntegerField(source="product.id", read_only=True)
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    sku = serializers.CharField(source="product.sku", read_only=True)
+    barcode = serializers.CharField(source="product.barcode", read_only=True)
+    selling_price = serializers.DecimalField(source="product.selling_price", max_digits=14, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = Inventory
+        fields = ["id", "product_id", "product_name", "sku", "barcode", "selling_price", "quantity", "reorder_level", "updated_at"]
+        read_only_fields = ["id", "product_id", "product_name", "sku", "barcode", "selling_price", "updated_at"]
 
 
 class SaleItemInputSerializer(serializers.Serializer):
