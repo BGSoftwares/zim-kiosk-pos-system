@@ -17,7 +17,7 @@ def money(value):
     return Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
 
 
-def rate(value):
+def positive_rate(value):
     result = Decimal(str(value))
     if result <= 0:
         raise ValueError("Exchange rate must be greater than zero")
@@ -26,16 +26,17 @@ def rate(value):
 
 @transaction.atomic
 def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, idempotency_key, receipt_number, discount=Decimal("0"), debtor_id=None):
+    if not idempotency_key:
+        raise ValueError("Idempotency key is required")
+
     existing = Sale.objects.filter(idempotency_key=idempotency_key).first()
     if existing:
         return existing
 
-    currency = currency.upper()
+    currency = str(currency).upper()
     if currency not in ALLOWED_CURRENCIES:
         raise ValueError("Unsupported currency")
-    exchange_rate = rate(exchange_rate)
-    if not idempotency_key:
-        raise ValueError("Idempotency key is required")
+    exchange_rate = positive_rate(exchange_rate)
     if not items:
         raise ValueError("A sale must contain at least one item")
     if not payments:
@@ -72,31 +73,39 @@ def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, id
     discount = money(discount)
     if discount < 0 or discount > subtotal:
         raise ValueError("Invalid discount")
-
     total = money(subtotal - discount)
 
     normalized_payments = []
     payment_total = Decimal("0")
+    credit_amount = Decimal("0")
+
     for payment in payments:
         method = str(payment["method"]).upper()
         if method not in PAYMENT_METHODS:
             raise ValueError(f"Unsupported payment method: {method}")
+
         amount = money(payment["amount"])
         if amount <= 0:
             raise ValueError("Payment amount must be greater than zero")
+
         payment_currency = str(payment.get("currency", currency)).upper()
         if payment_currency not in ALLOWED_CURRENCIES:
             raise ValueError("Unsupported payment currency")
-        payment_rate = rate(payment.get("exchange_rate", exchange_rate))
-        # Convert each payment into the sale currency before reconciliation.
+
+        payment_rate = positive_rate(payment.get("exchange_rate", exchange_rate))
         converted = amount if payment_currency == currency else money(amount * payment_rate / exchange_rate)
         payment_total += converted
-        normalized_payments.append((method, amount, payment_currency, payment_rate, payment.get("reference", "")))
+
+        if method == Payment.Method.CREDIT:
+            if payment_currency != currency:
+                raise ValueError("Credit payments must use the sale currency")
+            credit_amount += converted
+
+        normalized_payments.append((method, amount, payment_currency, payment.get("reference", "")))
 
     if payment_total != total:
         raise ValueError("Payment total must exactly match the sale total after currency conversion")
 
-    credit_amount = sum((converted for (method, amount, payment_currency, payment_rate, reference), converted in zip(normalized_payments, [money(p[1] if p[2] == currency else p[1] * p[3] / exchange_rate) for p in normalized_payments]) if method == "CREDIT"), Decimal("0"))
     if credit_amount > 0:
         if debtor_id is None:
             raise ValueError("A debtor is required for credit payments")
@@ -104,7 +113,14 @@ def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, id
             debtor = Debtor.objects.select_for_update().get(id=debtor_id, branch=branch, is_active=True)
         except Debtor.DoesNotExist:
             raise ValueError("Debtor does not exist at this branch")
-        existing_balance = sum((t.amount if t.transaction_type == DebtorTransaction.Type.SALE else -t.amount for t in debtor.transactions.all()), Decimal("0"))
+
+        existing_balance = sum(
+            (
+                t.amount if t.transaction_type == DebtorTransaction.Type.SALE else -t.amount
+                for t in debtor.transactions.filter(currency=currency)
+            ),
+            Decimal("0"),
+        )
         if debtor.credit_limit and existing_balance + credit_amount > debtor.credit_limit:
             raise ValueError("Credit limit exceeded")
     elif debtor_id is not None:
@@ -124,7 +140,13 @@ def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, id
     )
 
     for inventory, quantity, unit_price, line_total in prepared:
-        SaleItem.objects.create(sale=sale, product=inventory.product, quantity=quantity, unit_price=unit_price, line_total=line_total)
+        SaleItem.objects.create(
+            sale=sale,
+            product=inventory.product,
+            quantity=quantity,
+            unit_price=unit_price,
+            line_total=line_total,
+        )
         inventory.quantity -= quantity
         inventory.save(update_fields=["quantity", "updated_at"])
         StockTransaction.objects.create(
@@ -135,7 +157,7 @@ def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, id
             created_by=cashier,
         )
 
-    for method, amount, payment_currency, payment_rate, reference in normalized_payments:
+    for method, amount, payment_currency, reference in normalized_payments:
         Payment.objects.create(
             sale=sale,
             method=method,
@@ -149,6 +171,7 @@ def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, id
             debtor=debtor,
             transaction_type=DebtorTransaction.Type.SALE,
             amount=credit_amount,
+            currency=currency,
             sale=sale,
             reference=sale.receipt_number,
             created_by=cashier,
