@@ -26,6 +26,12 @@ type ApiProduct = {
   category: number | null;
 };
 
+type ApiInventory = {
+  product_id: number;
+  quantity: string | number;
+  reorder_level: string | number;
+};
+
 type ProductPayload = {
   sku: string;
   barcode?: string | null;
@@ -35,7 +41,7 @@ type ProductPayload = {
   category?: number | null;
 };
 
-function normalizeProduct(product: ApiProduct): Product {
+function normalizeProduct(product: ApiProduct, inventory?: ApiInventory): Product {
   return {
     id: String(product.id),
     name: product.name,
@@ -44,11 +50,17 @@ function normalizeProduct(product: ApiProduct): Product {
     buying_price: Number(product.cost_price),
     selling_price: Number(product.selling_price),
     wholesale_price: Number(product.selling_price),
-    stock: 0,
-    reorder_level: 0,
+    stock: inventory ? Number(inventory.quantity) : 0,
+    reorder_level: inventory ? Number(inventory.reorder_level) : 0,
     category: product.category ? String(product.category) : '',
     supplier: '',
   };
+}
+
+async function getInventoryMap(): Promise<Map<number, ApiInventory>> {
+  const data = await api.get<ApiInventory[] | { results: ApiInventory[] }>('/inventory/');
+  const rows = Array.isArray(data) ? data : data.results;
+  return new Map(rows.map(row => [row.product_id, row]));
 }
 
 export const useProducts = () => {
@@ -60,11 +72,14 @@ export const useProducts = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.get<ApiProduct[] | { results: ApiProduct[] }>('/products/');
-      const rows = Array.isArray(data) ? data : data.results;
-      setProducts(rows.map(normalizeProduct));
+      const [productData, inventory] = await Promise.all([
+        api.get<ApiProduct[] | { results: ApiProduct[] }>('/products/'),
+        getInventoryMap(),
+      ]);
+      const rows = Array.isArray(productData) ? productData : productData.results;
+      setProducts(rows.map(product => normalizeProduct(product, inventory.get(product.id))));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch products');
+      setError(err instanceof Error ? err.message : 'Failed to fetch products and inventory');
     } finally {
       setLoading(false);
     }
@@ -72,9 +87,13 @@ export const useProducts = () => {
 
   const getProductByBarcode = useCallback(async (barcode: string) => {
     try {
-      const data = await api.get<ApiProduct[] | { results: ApiProduct[] }>(`/products/?barcode=${encodeURIComponent(barcode)}`);
-      const rows = Array.isArray(data) ? data : data.results;
-      return rows[0] ? normalizeProduct(rows[0]) : null;
+      const data = await api.get<ApiInventory[] | { results: ApiInventory[] }>(`/inventory/?barcode=${encodeURIComponent(barcode)}`);
+      const inventoryRows = Array.isArray(data) ? data : data.results;
+      const inventory = inventoryRows[0];
+      if (!inventory) return null;
+      const productData = await api.get<ApiProduct[] | { results: ApiProduct[] }>(`/products/?barcode=${encodeURIComponent(barcode)}`);
+      const productRows = Array.isArray(productData) ? productData : productData.results;
+      return productRows[0] ? normalizeProduct(productRows[0], inventory) : null;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Product not found');
       return null;
