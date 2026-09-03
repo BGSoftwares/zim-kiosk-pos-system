@@ -12,11 +12,19 @@ from apps.products.models import Product
 from apps.sales.models import Sale
 from apps.sales.services import create_sale
 from apps.debtors.models import Debtor
-from .serializers import BranchSerializer, CreateSaleSerializer, DebtorSerializer, LoginSerializer, ProductSerializer, SaleSerializer, UserSerializer
+from apps.inventory.models import Inventory
+from .serializers import BranchSerializer, CreateSaleSerializer, DebtorSerializer, InventorySerializer, LoginSerializer, ProductSerializer, SaleSerializer, UserSerializer
 
 
 class IsManagementRole(BasePermission):
     allowed_roles = {User.Role.SUPER_ADMIN, User.Role.BRANCH_MANAGER}
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.role in self.allowed_roles)
+
+
+class IsStockManagementRole(BasePermission):
+    allowed_roles = {User.Role.SUPER_ADMIN, User.Role.BRANCH_MANAGER, User.Role.STOREKEEPER}
 
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and request.user.role in self.allowed_roles)
@@ -37,6 +45,12 @@ class UserViewSet(viewsets.ModelViewSet):
             qs = qs.filter(branch_id=self.request.user.branch_id)
         return qs
 
+    def perform_create(self, serializer):
+        if self.request.user.role != User.Role.SUPER_ADMIN:
+            serializer.save(branch=self.request.user.branch)
+        else:
+            serializer.save()
+
 
 class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
@@ -56,6 +70,11 @@ class ProductViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(sku=sku)
         return queryset
 
+    def get_permissions(self):
+        if self.request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            return [IsStockManagementRole()]
+        return [IsAuthenticated()]
+
 
 class BranchViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = BranchSerializer
@@ -69,10 +88,40 @@ class BranchViewSet(viewsets.ReadOnlyModelViewSet):
         return qs
 
 
+class InventoryViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = InventorySerializer
+    permission_classes = [IsAuthenticated]
+    queryset = Inventory.objects.select_related("product", "branch").order_by("product__name")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.user.role != User.Role.SUPER_ADMIN and self.request.user.branch_id:
+            qs = qs.filter(branch_id=self.request.user.branch_id)
+        product_id = self.request.query_params.get("product_id")
+        barcode = self.request.query_params.get("barcode")
+        sku = self.request.query_params.get("sku")
+        if product_id:
+            qs = qs.filter(product_id=product_id)
+        if barcode:
+            qs = qs.filter(product__barcode=barcode)
+        if sku:
+            qs = qs.filter(product__sku=sku)
+        return qs
+
+
 class DebtorViewSet(viewsets.ModelViewSet):
     serializer_class = DebtorSerializer
     permission_classes = [IsAuthenticated]
-    queryset = Debtor.objects.filter(is_active=True).order_by("name")
+    queryset = Debtor.objects.select_related("branch").filter(is_active=True).order_by("name")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.user.role != User.Role.SUPER_ADMIN and self.request.user.branch_id:
+            qs = qs.filter(branch_id=self.request.user.branch_id)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(branch=self.request.user.branch)
 
 
 class SaleViewSet(viewsets.ReadOnlyModelViewSet):
