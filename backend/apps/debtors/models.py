@@ -1,12 +1,20 @@
 from decimal import Decimal
+
 from django.db import models
+
 
 class Debtor(models.Model):
     name = models.CharField(max_length=160)
     phone = models.CharField(max_length=30, blank=True)
+    branch = models.ForeignKey(
+        "branches.Branch",
+        on_delete=models.PROTECT,
+        related_name="debtors",
+    )
     credit_limit = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
 
 class DebtorTransaction(models.Model):
     class Type(models.TextChoices):
