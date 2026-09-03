@@ -1,12 +1,16 @@
 export type Currency = 'USD' | 'ZiG' | 'ZAR';
 
-export interface CartItem {
+export interface PosProduct {
   id: string;
   name: string;
   barcode?: string | null;
   sku: string;
   sellingPrice: number;
   stock: number;
+  category: string;
+}
+
+export interface CartItem extends PosProduct {
   quantity: number;
   discount: number;
 }
