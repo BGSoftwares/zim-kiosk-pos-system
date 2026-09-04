@@ -24,7 +24,7 @@ MIDDLEWARE = [
 ]
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
-ASGI_APPLICATION = "config.asgi.application"
+ASGI_APPLICATION = "config.asgi.application"\n\nTEMPLATES = [{\n    "BACKEND": "django.template.backends.django.DjangoTemplates",\n    "DIRS": [BASE_DIR / "templates"],\n    "APP_DIRS": True,\n    "OPTIONS": {\n        "context_processors": [\n            "django.template.context_processors.request",\n            "django.contrib.auth.context_processors.auth",\n            "django.contrib.messages.context_processors.messages",\n        ],\n    },\n}]
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
