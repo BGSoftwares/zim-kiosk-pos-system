@@ -1,16 +1,20 @@
 import { useState, useCallback, useEffect } from 'react';
-import { supabase } from './supabase';
+import { api } from './api/client';
 
 export interface Branch {
   id: string;
   name: string;
   location: string;
+  code?: string;
+  address?: string;
+  phone?: string;
+  currency?: string;
 }
 
 export interface User {
   id: string;
   name: string;
-  role: 'admin' | 'manager' | 'cashier';
+  role: 'SUPER_ADMIN' | 'BRANCH_MANAGER' | 'CASHIER' | 'STOREKEEPER' | 'ACCOUNTANT';
   branch_id: string;
   email?: string;
 }
@@ -24,14 +28,10 @@ export const useBranches = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: err } = await supabase
-        .from('branches')
-        .select('*')
-        .order('name');
-
-      if (err) throw err;
-      setBranches(data || []);
-      return data;
+      const data = await api.get<Array<{ id: number; code: string; name: string; address: string; phone: string; currency: string }>>('/branches/');
+      const mapped = data.map(branch => ({ ...branch, id: String(branch.id), location: branch.address }));
+      setBranches(mapped);
+      return mapped;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch branches');
       return [];
@@ -40,9 +40,7 @@ export const useBranches = () => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchBranches();
-  }, [fetchBranches]);
+  useEffect(() => { void fetchBranches(); }, [fetchBranches]);
 
   return { branches, loading, error, fetchBranches };
 };
@@ -52,24 +50,14 @@ export const useUsers = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch users by branch
-  const fetchUsers = useCallback(async (branchId?: string) => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      let query = supabase
-        .from('users')
-        .select('*')
-        .order('name');
-
-      if (branchId) {
-        query = query.eq('branch_id', branchId);
-      }
-
-      const { data, error: err } = await query;
-      if (err) throw err;
-      setUsers(data || []);
-      return data;
+      const data = await api.get<Array<{ id: number; first_name: string; last_name: string; role: User['role']; branch_id: number | null; email: string }>>('/auth/users/');
+      const mapped = data.map(user => ({ id: String(user.id), name: `${user.first_name} ${user.last_name}`.trim(), role: user.role, branch_id: user.branch_id ? String(user.branch_id) : '', email: user.email }));
+      setUsers(mapped);
+      return mapped;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch users');
       return [];
@@ -78,67 +66,40 @@ export const useUsers = () => {
     }
   }, []);
 
-  // Create user
-  const createUser = useCallback(async (user: Omit<User, 'id'>) => {
+  const createUser = useCallback(async (user: Omit<User, 'id'> & { password?: string }) => {
     try {
-      const { data, error: err } = await supabase
-        .from('users')
-        .insert([user])
-        .select()
-        .single();
-
-      if (err) throw err;
-      setUsers([...users, data]);
-      return data;
+      const data = await api.post<{ id: number; first_name: string; last_name: string; role: User['role']; branch_id: number | null; email: string }>('/auth/users/', user);
+      const mapped = { id: String(data.id), name: `${data.first_name} ${data.last_name}`.trim(), role: data.role, branch_id: data.branch_id ? String(data.branch_id) : '', email: data.email };
+      setUsers(previous => [...previous, mapped]);
+      return mapped;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user');
       return null;
     }
-  }, [users]);
+  }, []);
 
-  // Update user
   const updateUser = useCallback(async (id: string, updates: Partial<User>) => {
     try {
-      const { data, error: err } = await supabase
-        .from('users')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (err) throw err;
-      setUsers(users.map(u => u.id === id ? data : u));
-      return data;
+      const data = await api.patch<{ id: number; first_name: string; last_name: string; role: User['role']; branch_id: number | null; email: string }>(`/auth/users/${id}/`, updates);
+      const mapped = { id: String(data.id), name: `${data.first_name} ${data.last_name}`.trim(), role: data.role, branch_id: data.branch_id ? String(data.branch_id) : '', email: data.email };
+      setUsers(previous => previous.map(user => user.id === id ? mapped : user));
+      return mapped;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update user');
       return null;
     }
-  }, [users]);
+  }, []);
 
-  // Delete user
   const deleteUser = useCallback(async (id: string) => {
     try {
-      const { error: err } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', id);
-
-      if (err) throw err;
-      setUsers(users.filter(u => u.id !== id));
+      await api.delete(`/auth/users/${id}/`);
+      setUsers(previous => previous.filter(user => user.id !== id));
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete user');
       return false;
     }
-  }, [users]);
+  }, []);
 
-  return {
-    users,
-    loading,
-    error,
-    fetchUsers,
-    createUser,
-    updateUser,
-    deleteUser,
-  };
+  return { users, loading, error, fetchUsers, createUser, updateUser, deleteUser };
 };

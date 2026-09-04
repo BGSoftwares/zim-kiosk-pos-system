@@ -1,7 +1,6 @@
-// Export Supabase client
-export { supabase } from './supabase';
-
-// Export hooks
+// Django API services
+export { api, getAccessToken, setAccessToken } from './api/client';
+export * from './auth';
 export { useProducts, type Product } from './useProducts';
 export { useSales, type Sale, type SaleItem } from './useSales';
 export { useDebtors, type Debtor, type DebtorTransaction } from './useDebtors';
