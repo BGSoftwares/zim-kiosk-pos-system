@@ -1212,7 +1212,7 @@ function ZIMKioskApp() {
 
               <div className="text-sm mb-3 text-gray-600">Cashier: {lastSale.cashier} • {lastSale.branch}</div>
 
-              {lastSale.items.map((item, index) => (
+              {lastSale.items.map((item) => (
                 <div key={index} className="flex justify-between text-sm py-[3px]">
                   <div>{item.name} × {item.quantity}</div>
                   <div className="font-medium tabular-nums">{currencySymbol}{item.total.toFixed(2)}</div>
