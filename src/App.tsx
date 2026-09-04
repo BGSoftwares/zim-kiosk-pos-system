@@ -299,7 +299,7 @@ function ZIMKioskApp() {
     } catch (err) {
       toast.error('Camera access failed. Use manual entry.');
       setShowScanner(false);
-      setIsScanning(false);
+      setShowScanner(false);
     }
   };
 
