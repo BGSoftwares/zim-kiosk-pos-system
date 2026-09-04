@@ -101,7 +101,7 @@ def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, id
                 raise ValueError("Credit payments must use the sale currency")
             credit_amount += converted
 
-        normalized_payments.append((method, amount, payment_currency, payment.get("reference", "")))
+        normalized_payments.append((method, amount, payment_currency, payment_rate, payment.get("reference", "")))
 
     if payment_total != total:
         raise ValueError("Payment total must exactly match the sale total after currency conversion")
