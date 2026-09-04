@@ -846,7 +846,7 @@ function ZIMKioskApp() {
                         </ResponsiveContainer>
                       </div>
                       <div className="grid grid-cols-2 text-xs gap-x-6 pt-1">
-                        {paymentBreakdown.map((p, _i) => <div key={i} className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded" style={{background: ['#0ea5e9','#22c55e','#eab308','#f97316'][i]}} />{p.name}</div>)}
+                        {paymentBreakdown.map((p, _i) => <div key={p.name} className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded" style={{background: ['#0ea5e9','#22c55e','#eab308','#f97316'][_i]}} />{p.name}</div>)}
                       </div>
                     </div>
 
@@ -1063,7 +1063,7 @@ function ZIMKioskApp() {
                   <div className="glass p-8 rounded-3xl">
                     <div className="font-medium mb-5">Top Moving Products</div>
                     <div className="space-y-4 mt-3">
-                      {topProducts.map((p, _i) => <div key={i} className="flex justify-between items-center text-sm border-b border-slate-800 pb-3"><div>{p.name}</div><div className="font-semibold tabular-nums">{p.stock} units</div></div>)}
+                      {topProducts.map((p) => <div key={p.name} className="flex justify-between items-center text-sm border-b border-slate-800 pb-3"><div>{p.name}</div><div className="font-semibold tabular-nums">{p.stock} units</div></div>)}
                     </div>
                     <div className="mt-6 p-4 text-xs bg-purple-950/30 rounded-2xl text-purple-300">AI: Maize Meal expected to sell out by 25 Jan. Auto-reorder enabled.</div>
                   </div>
@@ -1091,8 +1091,8 @@ function ZIMKioskApp() {
                   {[
                     { name: "Tafadzwa M.", role: "Cashier", sales: 1420, txns: 87, shift: "08:00 - 16:00" },
                     { name: "Rumbidzai K.", role: "Branch Manager", sales: 2940, txns: 113, shift: "09:00 - 17:00" }
-                  ].map((staff, _i) => (
-                    <div key={i} className="glass p-7 rounded-3xl">
+                  ] .map((staff) => (
+                    <div key={`${staff.name}-${staff.role}`} className="glass p-7 rounded-3xl">
                       <div className="font-semibold text-2xl mb-1">{staff.name}</div>
                       <div className="text-sm text-sky-400 mb-6">{staff.role} • {staff.shift}</div>
                       <div className="flex gap-9 text-sm"><div><div className="font-mono text-3xl font-semibold">${staff.sales}</div><div>Sales Today</div></div><div><div className="font-mono text-3xl font-semibold">{staff.txns}</div><div>Transactions</div></div></div>
@@ -1213,7 +1213,7 @@ function ZIMKioskApp() {
               <div className="text-sm mb-3 text-gray-600">Cashier: {lastSale.cashier} • {lastSale.branch}</div>
 
               {lastSale.items.map((item) => (
-                <div key={_index} className="flex justify-between text-sm py-[3px]">
+                <div key={`${item.name}-${item.quantity}`} className="flex justify-between text-sm py-[3px]">
                   <div>{item.name} × {item.quantity}</div>
                   <div className="font-medium tabular-nums">{currencySymbol}{item.total.toFixed(2)}</div>
                 </div>
