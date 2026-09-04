@@ -47,3 +47,51 @@ class SaleServiceTests(TestCase):
             )
         self.inventory.refresh_from_db()
         self.assertEqual(self.inventory.quantity, Decimal("10"))
+
+    def test_foreign_currency_payment_persists_rate(self):
+        sale = create_sale(
+            cashier=self.user, branch=self.branch, currency="USD", exchange_rate=Decimal("32"),
+            items=[{"product_id": self.product.id, "quantity": "1"}],
+            payments=[{"method": Payment.Method.CASH, "amount": "320", "currency": "ZIG", "exchange_rate": "32"}],
+            idempotency_key="offline-fx-1", receipt_number="R-FX-1",
+        )
+        payment = sale.payments.get()
+        self.assertEqual(payment.amount, Decimal("320.00"))
+        self.assertEqual(payment.currency, "ZIG")
+        self.assertEqual(payment.exchange_rate, Decimal("32.00000000"))
+
+    def test_credit_requires_debtor_and_creates_ledger(self):
+        from apps.debtors.models import Debtor, DebtorTransaction
+        debtor = Debtor.objects.create(name="Test Customer", branch=self.branch, credit_limit=Decimal("100"))
+        sale = create_sale(
+            cashier=self.user, branch=self.branch, currency="USD", exchange_rate=Decimal("1"),
+            items=[{"product_id": self.product.id, "quantity": "1"}],
+            payments=[{"method": Payment.Method.CREDIT, "amount": "10"}],
+            idempotency_key="credit-1", receipt_number="R-CREDIT-1", debtor_id=debtor.id,
+        )
+        tx = debtor.transactions.get(sale=sale)
+        self.assertEqual(tx.amount, Decimal("10.00"))
+        self.assertEqual(tx.currency, "USD")
+        self.assertEqual(tx.transaction_type, DebtorTransaction.Type.SALE)
+
+    def test_credit_without_debtor_is_rejected(self):
+        with self.assertRaises(ValueError):
+            create_sale(
+                cashier=self.user, branch=self.branch, currency="USD", exchange_rate=Decimal("1"),
+                items=[{"product_id": self.product.id, "quantity": "1"}],
+                payments=[{"method": Payment.Method.CREDIT, "amount": "10"}],
+                idempotency_key="credit-2", receipt_number="R-CREDIT-2",
+            )
+
+    def test_split_payment_reconciles_exactly(self):
+        sale = create_sale(
+            cashier=self.user, branch=self.branch, currency="USD", exchange_rate=Decimal("1"),
+            items=[{"product_id": self.product.id, "quantity": "2"}],
+            payments=[
+                {"method": Payment.Method.CASH, "amount": "12"},
+                {"method": Payment.Method.CARD, "amount": "8", "reference": "CARD-1"},
+            ],
+            idempotency_key="split-1", receipt_number="R-SPLIT-1",
+        )
+        self.assertEqual(sale.payments.count(), 2)
+        self.assertEqual(sum(p.amount for p in sale.payments.all()), Decimal("20.00"))
