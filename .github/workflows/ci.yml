@@ -20,7 +20,7 @@ jobs:
         run: test -f package-lock.json
       - run: npm ci --include=optional
       - name: Ensure Rollup native optional dependency
-        run: npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu
+        run: npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu lightningcss-linux-x64-gnu
       - run: npm run typecheck
       - run: npm run lint --if-present
       - run: npm run build
@@ -61,6 +61,6 @@ jobs:
           MYSQL_PORT: '3306'
         run: |
           python manage.py check
-          python manage.py makemigrations --check --dry-run --dry-run
+          python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
           python manage.py test
