@@ -18,7 +18,9 @@ jobs:
         run: npm install --package-lock-only --ignore-scripts
       - name: Verify lockfile
         run: test -f package-lock.json
-      - run: npm ci
+      - run: npm ci --include=optional
+      - name: Ensure Rollup native optional dependency
+        run: npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu
       - run: npm run typecheck
       - run: npm run lint --if-present
       - run: npm run build
