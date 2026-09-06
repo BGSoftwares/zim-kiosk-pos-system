@@ -157,7 +157,7 @@ def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, id
             created_by=cashier,
         )
 
-    for method, amount, payment_currency, reference in normalized_payments:
+    for method, amount, payment_currency, payment_rate, reference in normalized_payments:
         Payment.objects.create(
             sale=sale,
             method=method,
