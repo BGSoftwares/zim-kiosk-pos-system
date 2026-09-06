@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -97,9 +99,10 @@ class SaleItemInputSerializer(serializers.Serializer):
 
 class PaymentInputSerializer(serializers.Serializer):
     method = serializers.ChoiceField(choices=["CASH", "ECOCASH", "CARD", "BANK", "CREDIT"])
-    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0"))
     currency = serializers.CharField(max_length=3, required=False)
     reference = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    exchange_rate = serializers.DecimalField(max_digits=20, decimal_places=8, min_value=Decimal("0.00000001"), required=False)
 
 
 class CreateSaleSerializer(serializers.Serializer):
