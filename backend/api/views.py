@@ -149,7 +149,7 @@ class SaleViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": "Cashier is not assigned to a branch."}, status=status.HTTP_400_BAD_REQUEST)
         data = serializer.validated_data
         try:
-            sale = create_sale(cashier=request.user, branch=request.user.branch, currency=data["currency"].upper(), exchange_rate=data["exchange_rate"], items=data["items"], payments=data["payments"], idempotency_key=data["idempotency_key"], receipt_number=data["receipt_number"], discount=data.get("discount", 0))
+            sale = create_sale(cashier=request.user, branch=request.user.branch, currency=data["currency"].upper(), exchange_rate=data["exchange_rate"], items=data["items"], payments=data["payments"], idempotency_key=data["idempotency_key"], receipt_number=data["receipt_number"], discount=data.get("discount", 0), debtor_id=data.get("debtor_id"))
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)
