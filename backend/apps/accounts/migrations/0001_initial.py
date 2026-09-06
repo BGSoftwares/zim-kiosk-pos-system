@@ -22,4 +22,7 @@ class Migration(migrations.Migration):
             ("groups", models.ManyToManyField(blank=True, help_text="The groups this user belongs to. A user will get all permissions granted to each of their groups.", related_name="user_set", related_query_name="user", to="auth.group", verbose_name="groups")),
             ("user_permissions", models.ManyToManyField(blank=True, help_text="Specific permissions for this user.", related_name="user_set", related_query_name="user", to="auth.permission", verbose_name="user permissions")),
         ]),
+        migrations.AlterModelOptions(name="user", options={"verbose_name": "user", "verbose_name_plural": "users"}),
+        migrations.AlterModelManagers(name="user", managers=[]),
+        migrations.AlterField(name="date_joined", model_name="user", field=__import__("django.db.models").db.models.DateTimeField(auto_now_add=True, verbose_name="date joined")),
     ]
