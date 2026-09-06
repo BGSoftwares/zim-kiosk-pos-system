@@ -163,6 +163,7 @@ def create_sale(*, cashier, branch, currency, exchange_rate, items, payments, id
             method=method,
             amount=amount,
             currency=payment_currency,
+            exchange_rate=payment_rate,
             reference=reference,
         )
 
