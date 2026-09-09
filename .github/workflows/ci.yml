@@ -22,6 +22,7 @@ jobs:
       - run: npm install --include=optional --no-audit --no-fund --force --legacy-peer-deps
       - run: npm run typecheck
       - run: npm run lint --if-present
+      - run: npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu
       - run: chmod +x node_modules/.bin/vite
       - run: node_modules/.bin/vite build
 
