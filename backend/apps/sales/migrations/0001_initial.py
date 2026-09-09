@@ -1,0 +1,10 @@
+from django.db import migrations, models
+import django.db.models.deletion
+from decimal import Decimal
+class Migration(migrations.Migration):
+    initial=True
+    dependencies=[("accounts","0001_initial"),("branches","0001_initial"),("products","0001_initial")]
+    operations=[
+      migrations.CreateModel(name="Sale",fields=[("id",models.BigAutoField(auto_created=True,primary_key=True,serialize=False,verbose_name="ID")),("receipt_number",models.CharField(max_length=50,unique=True)),("currency",models.CharField(default="USD",max_length=3)),("exchange_rate",models.DecimalField(decimal_places=6,default=Decimal("1"),max_digits=18)),("subtotal",models.DecimalField(decimal_places=2,max_digits=14)),("discount",models.DecimalField(decimal_places=2,default=Decimal("0"),max_digits=14)),("tax",models.DecimalField(decimal_places=2,default=Decimal("0"),max_digits=14)),("total",models.DecimalField(decimal_places=2,max_digits=14)),("status",models.CharField(choices=[("COMPLETED","Completed"),("VOID","Void"),("REFUNDED","Refunded")],default="COMPLETED",max_length=20)),("idempotency_key",models.CharField(max_length=100,unique=True)),("created_at",models.DateTimeField(auto_now_add=True)),("branch",models.ForeignKey(on_delete=django.db.models.deletion.PROTECT,related_name="sales",to="branches.branch")),("cashier",models.ForeignKey(on_delete=django.db.models.deletion.PROTECT,related_name="sales",to="accounts.user"))]),
+      migrations.CreateModel(name="SaleItem",fields=[("id",models.BigAutoField(auto_created=True,primary_key=True,serialize=False,verbose_name="ID")),("quantity",models.DecimalField(decimal_places=3,max_digits=14)),("unit_price",models.DecimalField(decimal_places=2,max_digits=14)),("discount",models.DecimalField(decimal_places=2,default=Decimal("0"),max_digits=14)),("tax",models.DecimalField(decimal_places=2,default=Decimal("0"),max_digits=14)),("line_total",models.DecimalField(decimal_places=2,max_digits=14)),("product",models.ForeignKey(on_delete=django.db.models.deletion.PROTECT,to="products.product")),("sale",models.ForeignKey(on_delete=django.db.models.deletion.PROTECT,related_name="items",to="sales.sale"))]),
+    ]
