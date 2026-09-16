@@ -94,12 +94,12 @@ class InventorySerializer(serializers.ModelSerializer):
 
 class SaleItemInputSerializer(serializers.Serializer):
     product_id = serializers.IntegerField()
-    quantity = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=0.001)
+    quantity = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=Decimal("0.001"))
 
 
 class PaymentInputSerializer(serializers.Serializer):
     method = serializers.ChoiceField(choices=["CASH", "ECOCASH", "CARD", "BANK", "CREDIT"])
-    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0"))
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
     currency = serializers.CharField(max_length=3, required=False)
     reference = serializers.CharField(max_length=100, required=False, allow_blank=True)
     exchange_rate = serializers.DecimalField(max_digits=20, decimal_places=8, min_value=Decimal("0.00000001"), required=False)
@@ -107,10 +107,13 @@ class PaymentInputSerializer(serializers.Serializer):
 
 class CreateSaleSerializer(serializers.Serializer):
     currency = serializers.CharField(max_length=3)
-    exchange_rate = serializers.DecimalField(max_digits=18, decimal_places=6, min_value=0.000001)
+    exchange_rate = serializers.DecimalField(max_digits=18, decimal_places=6, min_value=Decimal("0.000001"))
     idempotency_key = serializers.CharField(max_length=100)
     receipt_number = serializers.CharField(max_length=50)
-    discount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0, required=False, default=0)
+    discount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0"), required=False, default=0)
+    debtor_id = serializers.PrimaryKeyRelatedField(
+        queryset=Debtor.objects.filter(is_active=True), required=False, allow_null=True
+    )
     items = SaleItemInputSerializer(many=True, min_length=1)
     payments = PaymentInputSerializer(many=True, min_length=1)
 
