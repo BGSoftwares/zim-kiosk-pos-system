@@ -1,0 +1,77 @@
+name: Continue production migration
+
+on:
+  push:
+    branches: ['feat/django-mysql-migration']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout migration branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Create deterministic npm lockfile when absent
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts
+          fi
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Apply conservative App.tsx migration
+        run: python3 scripts/migrate_legacy_frontend.py
+
+      - name: Frontend typecheck
+        run: npm run typecheck
+
+      - name: Frontend production build
+        run: npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements/base.txt
+
+      - name: Generate Django migrations
+        working-directory: backend
+        env:
+          DJANGO_SECRET_KEY: ci-migration-secret
+          DJANGO_DEBUG: 'True'
+        run: python manage.py makemigrations
+
+      - name: Validate Django configuration
+        working-directory: backend
+        env:
+          DJANGO_SECRET_KEY: ci-migration-secret
+          DJANGO_DEBUG: 'True'
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+
+      - name: Commit generated migration artifacts
+        run: |
+          if git diff --quiet; then
+            echo 'No automated migration changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json src/App.tsx backend/apps/*/migrations
+          git commit -m 'refactor: migrate legacy frontend state and generate db migrations'
+          git push origin HEAD:feat/django-mysql-migration

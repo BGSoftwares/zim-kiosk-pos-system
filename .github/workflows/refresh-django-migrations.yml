@@ -1,0 +1,68 @@
+name: Refresh Django migrations
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: zim_kiosk
+          MYSQL_USER: zim_kiosk
+          MYSQL_PASSWORD: test-password
+          MYSQL_ROOT_PASSWORD: root-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot-password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r backend/requirements/base.txt
+      - name: Generate migrations
+        working-directory: backend
+        env:
+          DJANGO_SECRET_KEY: ci-only-secret
+          DJANGO_DEBUG: 'True'
+          MYSQL_DATABASE: zim_kiosk
+          MYSQL_USER: zim_kiosk
+          MYSQL_PASSWORD: test-password
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: '3306'
+        run: python manage.py makemigrations
+      - name: Verify migration graph
+        working-directory: backend
+        env:
+          DJANGO_SECRET_KEY: ci-only-secret
+          DJANGO_DEBUG: 'True'
+          MYSQL_DATABASE: zim_kiosk
+          MYSQL_USER: zim_kiosk
+          MYSQL_PASSWORD: test-password
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: '3306'
+        run: |
+          python manage.py check
+          python manage.py migrate --plan
+      - name: Commit generated migrations
+        run: |
+          if git diff --quiet; then
+            echo "No migration changes detected."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/apps/*/migrations/*.py
+          git commit -m "chore: generate Django migrations"
+          git push
