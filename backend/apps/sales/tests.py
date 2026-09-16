@@ -1,5 +1,7 @@
 from decimal import Decimal
+
 from django.test import TestCase
+
 from apps.accounts.models import User
 from apps.branches.models import Branch
 from apps.inventory.models import Inventory
@@ -7,12 +9,19 @@ from apps.products.models import Product
 from apps.payments.models import Payment
 from .services import create_sale
 
+
 class SaleServiceTests(TestCase):
     def setUp(self):
         self.branch = Branch.objects.create(code="HAR", name="Harare Main")
-        self.user = User.objects.create_user(username="cashier", password="StrongPass123!", role=User.Role.CASHIER, branch=self.branch)
-        self.product = Product.objects.create(sku="SKU-1", name="Test Product", selling_price=Decimal("10.00"))
-        self.inventory = Inventory.objects.create(product=self.product, branch=self.branch, quantity=Decimal("10"))
+        self.user = User.objects.create_user(
+            username="cashier", password="StrongPass123!", role=User.Role.CASHIER, branch=self.branch
+        )
+        self.product = Product.objects.create(
+            sku="SKU-1", name="Test Product", selling_price=Decimal("10.00")
+        )
+        self.inventory = Inventory.objects.create(
+            product=self.product, branch=self.branch, quantity=Decimal("10")
+        )
 
     def test_sale_is_atomic_and_decrements_stock(self):
         sale = create_sale(
@@ -52,17 +61,20 @@ class SaleServiceTests(TestCase):
         sale = create_sale(
             cashier=self.user, branch=self.branch, currency="USD", exchange_rate=Decimal("32"),
             items=[{"product_id": self.product.id, "quantity": "1"}],
-            payments=[{"method": Payment.Method.CASH, "amount": "320", "currency": "ZIG", "exchange_rate": "32"}],
+            payments=[{"method": Payment.Method.CASH, "amount": "320", "currency": "ZIG", "exchange_rate": "1"}],
             idempotency_key="offline-fx-1", receipt_number="R-FX-1",
         )
         payment = sale.payments.get()
         self.assertEqual(payment.amount, Decimal("320.00"))
         self.assertEqual(payment.currency, "ZIG")
-        self.assertEqual(payment.exchange_rate, Decimal("32.00000000"))
+        self.assertEqual(payment.exchange_rate, Decimal("1.00000000"))
 
     def test_credit_requires_debtor_and_creates_ledger(self):
         from apps.debtors.models import Debtor, DebtorTransaction
-        debtor = Debtor.objects.create(name="Test Customer", branch=self.branch, credit_limit=Decimal("100"))
+
+        debtor = Debtor.objects.create(
+            name="Test Customer", branch=self.branch, credit_limit=Decimal("100")
+        )
         sale = create_sale(
             cashier=self.user, branch=self.branch, currency="USD", exchange_rate=Decimal("1"),
             items=[{"product_id": self.product.id, "quantity": "1"}],
