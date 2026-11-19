@@ -98,14 +98,15 @@ export const useSales = () => {
           .single();
 
         if (product) {
-          const newStock = product.stock - item.quantity;
-          await supabase
+          const newStock = Math.max(0, product.stock - item.quantity);
+          const { error: stockErr } = await supabase
             .from('products')
             .update({ stock: newStock })
             .eq('id', item.product_id);
+          if (stockErr) throw stockErr;
 
           // Log stock transaction
-          await supabase
+          const { error: logErr } = await supabase
             .from('stock_transactions')
             .insert([{
               product_id: item.product_id,
@@ -114,6 +115,7 @@ export const useSales = () => {
               reference_id: saleData.id,
               notes: `Sale transaction`,
             }]);
+          if (logErr) throw logErr;
         }
       }
 

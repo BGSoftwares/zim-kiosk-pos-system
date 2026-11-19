@@ -243,20 +243,20 @@ function ZIMKioskApp() {
       return;
     }
     
-    setCart(prev => {
-      const existing = prev.findIndex(item => item.id === product.id);
-      if (existing >= 0) {
-        const updated = [...prev];
-        if (updated[existing].quantity < product.stock) {
-          updated[existing].quantity += 1;
-          toast.success(`Added another ${product.name}`);
-        }
-        return updated;
-      } else {
-        toast.success(`${product.name} added to cart`, { description: `${currencySymbol}${convertPrice(product.sellingPrice).toFixed(2)}` });
-        return [...prev, { ...product, quantity: 1, discount: 0 }];
+    const existingItem = cart.find(item => item.id === product.id);
+    if (existingItem) {
+      if (existingItem.quantity >= product.stock) {
+        toast.warning(`Only ${product.stock} available`);
+        return;
       }
-    });
+      setCart(prev => prev.map(item =>
+        item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+      ));
+      toast.success(`Added another ${product.name}`);
+    } else {
+      setCart(prev => [...prev, { ...product, quantity: 1, discount: 0 }]);
+      toast.success(`${product.name} added to cart`, { description: `${currencySymbol}${convertPrice(product.sellingPrice).toFixed(2)}` });
+    }
   };
 
   // Barcode Scanner
@@ -275,13 +275,13 @@ function ZIMKioskApp() {
           const matchedProduct = products.find(p => 
             p.barcode === decodedText || 
             p.sku === decodedText || 
-            decodedText.includes(p.barcode.slice(-6))
+            (p.barcode.length >= 6 && decodedText.includes(p.barcode.slice(-6)))
           );
           
           if (matchedProduct) {
             addToCart(matchedProduct);
             // Stop scanner automatically
-            stopScanner();
+            stopScanner(html5QrCode);
             toast.success(`Scanned: ${matchedProduct.name}`, { 
               description: 'Added to cart',
               action: { label: "View Cart", onClick: () => setShowScanner(false) }
@@ -298,15 +298,15 @@ function ZIMKioskApp() {
       );
     } catch (err) {
       toast.error('Camera access failed. Use manual entry.');
+      setScannerInstance(null);
       setShowScanner(false);
-      setIsScanning(false);
     }
   };
 
-  const stopScanner = () => {
-    if (scannerInstance) {
-      scannerInstance.stop().then(() => {
-        scannerInstance.clear();
+  const stopScanner = (instance: Html5Qrcode | null = scannerInstance) => {
+    if (instance) {
+      instance.stop().then(() => {
+        instance.clear();
       }).catch(() => {});
       setScannerInstance(null);
     }
@@ -365,6 +365,11 @@ function ZIMKioskApp() {
     // Cash validation
     if (paymentMethod === 'Cash' && cashReceived < cartTotal) {
       toast.error('Insufficient cash received');
+      return;
+    }
+
+    if (paymentMethod === 'Debt' && !customerPhone.trim()) {
+      toast.error('Enter the customer phone number for a credit sale');
       return;
     }
 
@@ -621,7 +626,7 @@ function ZIMKioskApp() {
   };
 
   // Analytics Data for Charts
-  const salesTrendData = sales.length > 0 ? sales.slice(0, 7).reverse().map((sale, i) => ({
+  const salesTrendData = sales.length > 0 ? sales.slice(0, 7).reverse().map((sale) => ({
     day: format(new Date(sale.date), 'dd MMM'),
     revenue: sale.total
   })) : [
@@ -1179,14 +1184,14 @@ function ZIMKioskApp() {
       {/* SCANNER MODAL */}
       <AnimatePresence>
         {showScanner && (
-          <div className="fixed inset-0 z-[80] bg-black/90 flex items-center justify-center p-8" onClick={stopScanner}>
+          <div className="fixed inset-0 z-[80] bg-black/90 flex items-center justify-center p-8" onClick={() => stopScanner()}>
             <div className="max-w-[440px] w-full text-center" onClick={e => e.stopPropagation()}>
               <div className="font-medium mb-2 text-white tracking-tight text-2xl">Barcode Scanner</div>
               <div className="text-sky-400 text-sm mb-6">Point camera at product barcode</div>
               
               <div id="scanner-container" className="bg-black rounded-3xl overflow-hidden aspect-video shadow-2xl mb-6"></div>
               
-              <button onClick={stopScanner} className="px-9 py-3 rounded-2xl bg-white text-black font-semibold">CLOSE SCANNER</button>
+              <button onClick={() => stopScanner()} className="px-9 py-3 rounded-2xl bg-white text-black font-semibold">CLOSE SCANNER</button>
             </div>
           </div>
         )}

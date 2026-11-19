@@ -62,6 +62,7 @@ export const DatabaseTestComponent: React.FC = () => {
     console.log('Creating test sale...');
     const result = await createSale(
       {
+        sale_date: new Date().toISOString(),
         total_amount: testSaleItems.reduce((sum, item) => sum + item.subtotal, 0),
         payment_method: 'cash',
         currency: 'ZWL',

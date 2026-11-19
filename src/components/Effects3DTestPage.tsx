@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Product3DCard, Sales3DPyramid, Transaction3DCube, Dashboard3DSphere } from '../3D';
+import React, { useState } from 'react';
+import { Product3DCard, Sales3DPyramid, Transaction3DCube, Dashboard3DSphere } from './3D';
 import { motion } from 'framer-motion';
 import { Sparkles, RotateCw, Zap } from 'lucide-react';
 
