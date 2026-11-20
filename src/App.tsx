@@ -8,7 +8,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
-import { toast, Toaster } from 'sonner';
+import { toast } from 'sonner';
 import { format } from 'date-fns';
 
 // Types
@@ -42,6 +42,7 @@ interface Sale {
   cashier: string;
   branch: string;
   customerPhone?: string;
+  cashReceived?: number;
 }
 
 interface Debtor {
@@ -102,20 +103,43 @@ const roles = ['Super Admin', 'Branch Manager', 'Cashier', 'Storekeeper', 'Accou
 
 const paymentMethods = ['Cash', 'EcoCash', 'Card', 'Bank Transfer', 'Debt'];
 
+// Helpers
+const loadStored = <T,>(key: string, fallback: T): T => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const escapeHtml = (value: unknown) =>
+  String(value ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+  ));
+
+const csvCell = (value: unknown) => {
+  let text = String(value ?? '');
+  if (/^[=+\-@]/.test(text)) text = "'" + text; // block spreadsheet formula injection
+  return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+};
+
+const symbolFor = (currency: string) => (currency === 'USD' ? '$' : currency === 'ZiG' ? 'ZiG' : 'R');
+
 // Main App Component
 function ZIMKioskApp() {
   const navigate = useNavigate();
 
   // Core State - All persisted to localStorage
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User>({ name: '', role: '', branch: '' });
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!loadStored<User | null>('zimkiosk_user', null));
+  const [currentUser, setCurrentUser] = useState<User>(() => loadStored<User>('zimkiosk_user', { name: '', role: '', branch: '' }));
   const [currentBranch, setCurrentBranch] = useState('b1');
-  const [currentCurrency, setCurrentCurrency] = useState<'USD' | 'ZiG' | 'ZAR'>('USD');
+  const [currentCurrency, setCurrentCurrency] = useState<'USD' | 'ZiG' | 'ZAR'>(() => loadStored<'USD' | 'ZiG' | 'ZAR'>('zimkiosk_currency', 'USD'));
   const [exchangeRates, setExchangeRates] = useState({ ZiG: 27.45, ZAR: 18.25 });
   
-  const [products, setProducts] = useState<Product[]>(initialProducts);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [debtors, setDebtors] = useState<Debtor[]>(initialDebtors);
+  const [products, setProducts] = useState<Product[]>(() => loadStored<Product[]>('zimkiosk_products', initialProducts));
+  const [sales, setSales] = useState<Sale[]>(() => loadStored<Sale[]>('zimkiosk_sales', []));
+  const [debtors, setDebtors] = useState<Debtor[]>(() => loadStored<Debtor[]>('zimkiosk_debtors', initialDebtors));
   const [notifications, setNotifications] = useState<Notification[]>([
     { id: 'n1', type: 'lowstock', message: 'Baking Powder stock low (32 units)', time: '2m ago', read: false },
     { id: 'n2', type: 'sale', message: 'Large sale recorded: $184.50', time: '14m ago', read: true },
@@ -145,28 +169,6 @@ function ZIMKioskApp() {
     name: '', barcode: '', sku: '', buyingPrice: 0, sellingPrice: 0, wholesalePrice: 0, stock: 0, reorderLevel: 10, category: '', supplier: ''
   });
 
-  // Load from localStorage on mount
-  useEffect(() => {
-    const savedProducts = localStorage.getItem('zimkiosk_products');
-    if (savedProducts) setProducts(JSON.parse(savedProducts));
-    
-    const savedSales = localStorage.getItem('zimkiosk_sales');
-    if (savedSales) setSales(JSON.parse(savedSales));
-    
-    const savedDebtors = localStorage.getItem('zimkiosk_debtors');
-    if (savedDebtors) setDebtors(JSON.parse(savedDebtors));
-    
-    const savedCurrency = localStorage.getItem('zimkiosk_currency') as any;
-    if (savedCurrency) setCurrentCurrency(savedCurrency);
-
-    const savedUser = localStorage.getItem('zimkiosk_user');
-    if (savedUser) {
-      const user = JSON.parse(savedUser);
-      setCurrentUser(user);
-      setIsLoggedIn(true);
-    }
-  }, []);
-
   // Persist to localStorage
   useEffect(() => {
     localStorage.setItem('zimkiosk_products', JSON.stringify(products));
@@ -181,7 +183,7 @@ function ZIMKioskApp() {
   }, [debtors]);
 
   useEffect(() => {
-    localStorage.setItem('zimkiosk_currency', currentCurrency);
+    localStorage.setItem('zimkiosk_currency', JSON.stringify(currentCurrency));
   }, [currentCurrency]);
 
   // Offline detection
@@ -389,7 +391,8 @@ function ZIMKioskApp() {
       currency: currentCurrency,
       cashier: currentUser.name || 'Cashier',
       branch: branches.find(b => b.id === currentBranch)?.name || 'Harare Main',
-      customerPhone: paymentMethod === 'EcoCash' ? customerPhone : undefined
+      customerPhone: paymentMethod === 'EcoCash' ? customerPhone : undefined,
+      cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined
     };
 
     // Update inventory stock
@@ -483,21 +486,21 @@ function ZIMKioskApp() {
       </style></head><body>
       <div class="header">
         <div class="shop">ZIM KIOSK</div>
-        <div>${branches.find(b => b.id === currentBranch)?.name}</div>
+        <div>${escapeHtml(lastSale.branch)}</div>
         <div>Harare, Zimbabwe • VAT: 12345678</div>
       </div>
-      <div>Receipt: ${lastSale.id}</div>
+      <div>Receipt: ${escapeHtml(lastSale.id)}</div>
       <div>Date: ${format(new Date(lastSale.date), 'dd MMM yyyy HH:mm')}</div>
-      <div>Cashier: ${lastSale.cashier}</div>
-      <div>Payment: ${lastSale.paymentMethod} (${lastSale.currency})</div>
+      <div>Cashier: ${escapeHtml(lastSale.cashier)}</div>
+      <div>Payment: ${escapeHtml(lastSale.paymentMethod)} (${escapeHtml(lastSale.currency)})</div>
       <br/>
       <table>
         ${lastSale.items.map(item => `
-          <tr><td>${item.name}</td><td style="text-align:right">${item.quantity}x</td><td style="text-align:right">${currencySymbol}${item.price.toFixed(2)}</td></tr>
-          <tr><td colspan="3" style="padding-bottom:6px;font-size:11px;color:#666">Sub: ${currencySymbol}${item.total.toFixed(2)}</td></tr>
+          <tr><td>${escapeHtml(item.name)}</td><td style="text-align:right">${item.quantity}x</td><td style="text-align:right">${symbolFor(lastSale.currency)}${item.price.toFixed(2)}</td></tr>
+          <tr><td colspan="3" style="padding-bottom:6px;font-size:11px;color:#666">Sub: ${symbolFor(lastSale.currency)}${item.total.toFixed(2)}</td></tr>
         `).join('')}
       </table>
-      <div class="total">TOTAL: ${currencySymbol}${lastSale.total.toFixed(2)}</div>
+      <div class="total">TOTAL: ${symbolFor(lastSale.currency)}${lastSale.total.toFixed(2)}</div>
       <br/>
       <div class="footer">
         Thank you for shopping at ZIM KIOSK!<br/>
@@ -513,23 +516,40 @@ function ZIMKioskApp() {
 
   // Inventory Functions
   const saveProduct = () => {
-    if (!newProduct.name) {
+    if (!newProduct.name.trim()) {
       toast.error('Product name required');
       return;
     }
-    
+    if (!(newProduct.sellingPrice > 0)) {
+      toast.error('Selling price must be greater than 0');
+      return;
+    }
+    if (!Number.isInteger(newProduct.stock) || newProduct.stock < 0) {
+      toast.error('Stock must be a whole number, 0 or more');
+      return;
+    }
+
+    const barcode = newProduct.barcode.trim() || '6' + Math.floor(Math.random() * 10000000000);
+    const sku = newProduct.sku.trim() || newProduct.name.slice(0,3).toUpperCase() + '-' + Date.now().toString().slice(-4);
+    const clash = products.find(p => p.id !== editingProduct?.id && (p.barcode === barcode || p.sku === sku));
+    if (clash) {
+      toast.error(`Barcode or SKU already used by "${clash.name}"`);
+      return;
+    }
+
     const productData: Product = {
       id: editingProduct ? editingProduct.id : 'p' + Date.now(),
-      name: newProduct.name,
-      barcode: newProduct.barcode || '6' + Math.floor(Math.random() * 10000000000),
-      sku: newProduct.sku || newProduct.name.slice(0,3).toUpperCase() + '-' + Date.now().toString().slice(-4),
-      buyingPrice: newProduct.buyingPrice || 1,
-      sellingPrice: newProduct.sellingPrice || 1.5,
-      wholesalePrice: newProduct.wholesalePrice || newProduct.sellingPrice * 0.85,
-      stock: newProduct.stock || 50,
-      reorderLevel: newProduct.reorderLevel || 15,
+      name: newProduct.name.trim(),
+      barcode,
+      sku,
+      buyingPrice: newProduct.buyingPrice || 0,
+      sellingPrice: newProduct.sellingPrice,
+      wholesalePrice: newProduct.wholesalePrice || Math.round(newProduct.sellingPrice * 0.85 * 100) / 100,
+      stock: newProduct.stock,
+      reorderLevel: newProduct.reorderLevel ?? 10,
       category: newProduct.category || 'General',
       supplier: newProduct.supplier || 'Local Supplier',
+      expiryDate: editingProduct?.expiryDate,
     };
 
     if (editingProduct) {
@@ -588,7 +608,7 @@ function ZIMKioskApp() {
     }
     const headers = 'Date,Receipt,Cashier,Branch,Total,Currency,Payment\n';
     const rows = sales.map(s => 
-      `${format(new Date(s.date), 'yyyy-MM-dd HH:mm')},${s.id},${s.cashier},${s.branch},${s.total},${s.currency},${s.paymentMethod}`
+      [format(new Date(s.date), 'yyyy-MM-dd HH:mm'), s.id, s.cashier, s.branch, s.total, s.currency, s.paymentMethod].map(csvCell).join(',')
     ).join('\n');
     
     const csv = headers + rows;
@@ -598,6 +618,7 @@ function ZIMKioskApp() {
     a.href = url;
     a.download = `zimkiosk_sales_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
+    URL.revokeObjectURL(url);
     toast.success('Sales report exported');
   };
 
@@ -695,7 +716,6 @@ function ZIMKioskApp() {
   // Main Application UI
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col">
-      <Toaster position="top-center" richColors closeButton />
 
       {/* Top Navigation Bar */}
       <header className="h-16 border-b border-slate-800 bg-slate-900/95 backdrop-blur-lg z-50 flex items-center px-6 sticky top-0">
@@ -1115,8 +1135,8 @@ function ZIMKioskApp() {
                 <div className="glass p-9 rounded-3xl mb-7">
                   <div className="font-semibold mb-4">Exchange Rates (Admin Only)</div>
                   <div className="grid grid-cols-2 gap-5">
-                    <div><label className="text-xs text-slate-400">ZiG per USD</label><input type="number" value={exchangeRates.ZiG} onChange={e => setExchangeRates({...exchangeRates, ZiG: parseFloat(e.target.value)})} className="block w-full mt-1 py-3 bg-slate-900 rounded-2xl px-5 text-xl border border-slate-700" /></div>
-                    <div><label className="text-xs text-slate-400">ZAR per USD</label><input type="number" value={exchangeRates.ZAR} onChange={e => setExchangeRates({...exchangeRates, ZAR: parseFloat(e.target.value)})} className="block w-full mt-1 py-3 bg-slate-900 rounded-2xl px-5 text-xl border border-slate-700" /></div>
+                    <div><label className="text-xs text-slate-400">ZiG per USD</label><input type="number" value={exchangeRates.ZiG} onChange={e => { const v = parseFloat(e.target.value); if (v > 0) setExchangeRates({...exchangeRates, ZiG: v}); }} className="block w-full mt-1 py-3 bg-slate-900 rounded-2xl px-5 text-xl border border-slate-700" /></div>
+                    <div><label className="text-xs text-slate-400">ZAR per USD</label><input type="number" value={exchangeRates.ZAR} onChange={e => { const v = parseFloat(e.target.value); if (v > 0) setExchangeRates({...exchangeRates, ZAR: v}); }} className="block w-full mt-1 py-3 bg-slate-900 rounded-2xl px-5 text-xl border border-slate-700" /></div>
                   </div>
                   <div className="text-xs mt-3 text-emerald-400">Rates updated live. All prices automatically recalculated.</div>
                 </div>
@@ -1220,14 +1240,14 @@ function ZIMKioskApp() {
               {lastSale.items.map((item, index) => (
                 <div key={index} className="flex justify-between text-sm py-[3px]">
                   <div>{item.name} × {item.quantity}</div>
-                  <div className="font-medium tabular-nums">{currencySymbol}{item.total.toFixed(2)}</div>
+                  <div className="font-medium tabular-nums">{symbolFor(lastSale.currency)}{item.total.toFixed(2)}</div>
                 </div>
               ))}
-              <div className="flex justify-between border-t border-gray-300 pt-4 mt-4 text-lg font-semibold"><div>TOTAL PAID</div><div>{currencySymbol}{lastSale.total.toFixed(2)}</div></div>
+              <div className="flex justify-between border-t border-gray-300 pt-4 mt-4 text-lg font-semibold"><div>TOTAL PAID</div><div>{symbolFor(lastSale.currency)}{lastSale.total.toFixed(2)}</div></div>
               {lastSale.paymentMethod === 'Cash' && (
                 <div className="mt-3 pt-3 border-t text-sm space-y-1 bg-emerald-50 p-3 rounded-xl">
-                  <div className="flex justify-between"><div>Amount Received</div><div className="font-medium tabular-nums">{currencySymbol}{(cashReceived || lastSale.total).toFixed(2)}</div></div>
-                  <div className="flex justify-between text-emerald-600 font-semibold"><div>Change Due</div><div>{currencySymbol}{((cashReceived || lastSale.total) - lastSale.total).toFixed(2)}</div></div>
+                  <div className="flex justify-between"><div>Amount Received</div><div className="font-medium tabular-nums">{symbolFor(lastSale.currency)}{(lastSale.cashReceived ?? lastSale.total).toFixed(2)}</div></div>
+                  <div className="flex justify-between text-emerald-600 font-semibold"><div>Change Due</div><div>{symbolFor(lastSale.currency)}{(Math.max(0, (lastSale.cashReceived ?? lastSale.total) - lastSale.total)).toFixed(2)}</div></div>
                 </div>
               )}
               <div className="text-center mt-4 text-xs tracking-widest">PAYMENT: {lastSale.paymentMethod.toUpperCase()}</div>
@@ -1254,8 +1274,8 @@ function ZIMKioskApp() {
                 <input value={newProduct.name} placeholder="Product Name" onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl col-span-2" />
                 <input value={newProduct.barcode} placeholder="Barcode" onChange={e => setNewProduct({...newProduct, barcode: e.target.value})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl" />
                 <input value={newProduct.sku} placeholder="SKU" onChange={e => setNewProduct({...newProduct, sku: e.target.value})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl" />
-                <input type="number" value={newProduct.sellingPrice} placeholder="Selling Price USD" onChange={e => setNewProduct({...newProduct, sellingPrice: parseFloat(e.target.value)})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl" />
-                <input type="number" value={newProduct.stock} placeholder="Stock Qty" onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value)})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl" />
+                <input type="number" value={newProduct.sellingPrice} placeholder="Selling Price USD" onChange={e => setNewProduct({...newProduct, sellingPrice: parseFloat(e.target.value) || 0})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl" />
+                <input type="number" value={newProduct.stock} placeholder="Stock Qty" onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl" />
               </div>
               <div className="flex gap-3 mt-6">
                 <button onClick={() => { setShowAddProduct(false); setEditingProduct(null); }} className="flex-1 py-3 border rounded-2xl">Cancel</button>
