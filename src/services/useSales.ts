@@ -68,56 +68,14 @@ export const useSales = () => {
     setLoading(true);
     setError(null);
     try {
-      // Create the sale
-      const { data: saleData, error: saleErr } = await supabase
-        .from('sales')
-        .insert([sale])
-        .select()
-        .single();
+      // Single atomic database call: sale + items + stock + stock log.
+      // See supabase_create_sale_function.sql
+      const { data: saleData, error: saleErr } = await supabase.rpc('create_sale', {
+        p_sale: sale,
+        p_items: items,
+      });
 
       if (saleErr) throw saleErr;
-
-      // Create sale items
-      const itemsWithSaleId = items.map(item => ({
-        ...item,
-        sale_id: saleData.id,
-      }));
-
-      const { error: itemsErr } = await supabase
-        .from('sale_items')
-        .insert(itemsWithSaleId);
-
-      if (itemsErr) throw itemsErr;
-
-      // Update stock for each item
-      for (const item of items) {
-        const { data: product } = await supabase
-          .from('products')
-          .select('stock')
-          .eq('id', item.product_id)
-          .single();
-
-        if (product) {
-          const newStock = Math.max(0, product.stock - item.quantity);
-          const { error: stockErr } = await supabase
-            .from('products')
-            .update({ stock: newStock })
-            .eq('id', item.product_id);
-          if (stockErr) throw stockErr;
-
-          // Log stock transaction
-          const { error: logErr } = await supabase
-            .from('stock_transactions')
-            .insert([{
-              product_id: item.product_id,
-              transaction_type: 'sale',
-              quantity_change: -item.quantity,
-              reference_id: saleData.id,
-              notes: `Sale transaction`,
-            }]);
-          if (logErr) throw logErr;
-        }
-      }
 
       return saleData;
     } catch (err) {
