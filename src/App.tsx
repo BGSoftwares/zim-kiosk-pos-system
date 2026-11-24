@@ -1,107 +1,19 @@
-import { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
-import { 
-  Home, ShoppingCart, Package, Users, TrendingUp, Settings, 
-  LogOut, ScanLine, Plus, Minus, Trash2, Download, 
-  Phone, ArrowRight, AlertTriangle 
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Home, ShoppingCart, Package, Users, TrendingUp, Settings,
+  LogOut, ScanLine, Plus, Minus, Trash2, Download,
+  Phone, AlertTriangle, Loader2, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
-
-// Types
-interface Product {
-  id: string;
-  name: string;
-  barcode: string;
-  sku: string;
-  buyingPrice: number;
-  sellingPrice: number;
-  wholesalePrice: number;
-  stock: number;
-  reorderLevel: number;
-  category: string;
-  supplier: string;
-  expiryDate?: string;
-}
-
-interface CartItem extends Product {
-  quantity: number;
-  discount: number;
-}
-
-interface Sale {
-  id: string;
-  date: string;
-  items: Array<{name: string; quantity: number; price: number; total: number}>;
-  total: number;
-  paymentMethod: string;
-  currency: string;
-  cashier: string;
-  branch: string;
-  customerPhone?: string;
-  cashReceived?: number;
-}
-
-interface Debtor {
-  id: string;
-  name: string;
-  phone: string;
-  address: string;
-  nationalId: string;
-  totalOwed: number;
-  lastPayment: string;
-  notes: string;
-}
-
-interface Notification {
-  id: string;
-  type: string;
-  message: string;
-  time: string;
-  read: boolean;
-}
-
-interface Branch {
-  id: string;
-  name: string;
-  location: string;
-}
-
-interface User {
-  name: string;
-  role: string;
-  branch: string;
-}
-
-// Sample Data - Zimbabwean Retail Products
-const initialProducts: Product[] = [
-  { id: 'p1', name: 'Maize Meal 10kg', barcode: '6001234567890', sku: 'MM-10KG', buyingPrice: 7.50, sellingPrice: 9.99, wholesalePrice: 8.75, stock: 142, reorderLevel: 30, category: 'Staples', supplier: 'National Foods', expiryDate: '2026-08-15' },
-  { id: 'p2', name: 'Sugar 2kg', barcode: '6009876543210', sku: 'SG-2KG', buyingPrice: 2.10, sellingPrice: 2.85, wholesalePrice: 2.45, stock: 89, reorderLevel: 25, category: 'Staples', supplier: 'Tongaat Hulett' },
-  { id: 'p3', name: 'Cooking Oil 5L', barcode: '6002345678901', sku: 'CO-5L', buyingPrice: 6.20, sellingPrice: 8.49, wholesalePrice: 7.35, stock: 56, reorderLevel: 20, category: 'Cooking', supplier: 'Unilever' },
-  { id: 'p4', name: 'Rice 5kg', barcode: '6003456789012', sku: 'RC-5KG', buyingPrice: 4.80, sellingPrice: 6.25, wholesalePrice: 5.50, stock: 67, reorderLevel: 15, category: 'Staples', supplier: 'Asian Foods' },
-  { id: 'p5', name: 'Bread Loaf', barcode: '6004567890123', sku: 'BRD-01', buyingPrice: 1.05, sellingPrice: 1.45, wholesalePrice: 1.25, stock: 124, reorderLevel: 40, category: 'Bakery', supplier: 'Lobels' },
-  { id: 'p6', name: 'Milk 1L', barcode: '6005678901234', sku: 'MLK-1L', buyingPrice: 1.15, sellingPrice: 1.59, wholesalePrice: 1.40, stock: 78, reorderLevel: 35, category: 'Dairy', supplier: 'Dairibord', expiryDate: '2026-02-28' },
-  { id: 'p7', name: 'Coca Cola 2L', barcode: '6006789012345', sku: 'CC-2L', buyingPrice: 1.35, sellingPrice: 1.89, wholesalePrice: 1.60, stock: 95, reorderLevel: 30, category: 'Beverages', supplier: 'Coca-Cola' },
-  { id: 'p8', name: 'Baking Powder 500g', barcode: '6007890123456', sku: 'BP-500G', buyingPrice: 1.60, sellingPrice: 2.15, wholesalePrice: 1.85, stock: 32, reorderLevel: 12, category: 'Baking', supplier: 'Royal' },
-];
-
-const initialDebtors: Debtor[] = [
-  { id: 'd1', name: 'Mrs. Chipo Mhlanga', phone: '+263 77 234 5678', address: '12 Harare Road, Mbare', nationalId: '63-123456X78', totalOwed: 47.50, lastPayment: '2026-01-12', notes: 'Regular customer. Pays weekly.' },
-  { id: 'd2', name: 'Mr. Tapiwa Ndlovu', phone: '+263 71 987 6543', address: '45 Bulawayo Ave', nationalId: '29-765432A12', totalOwed: 124.80, lastPayment: '2026-01-05', notes: 'Hardware supplies credit.' },
-];
-
-const branches: Branch[] = [
-  { id: 'b1', name: 'Harare Main', location: 'CBD, Harare' },
-  { id: 'b2', name: 'Bulawayo Central', location: 'City Centre' },
-  { id: 'b3', name: 'Mutare Depot', location: 'Sakubva' },
-];
-
-const roles = ['Super Admin', 'Branch Manager', 'Cashier', 'Storekeeper', 'Accountant'];
-
-const paymentMethods = ['Cash', 'EcoCash', 'Card', 'Bank Transfer', 'Debt'];
+import { format, subDays } from 'date-fns';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import LoginScreen from './LoginScreen';
+import { can, canAccessTab, maxDiscount, ROLES, ROLE_LABELS, TAB_ACCESS, type Role, type Tab } from './lib/roles';
+import * as api from './services/api';
+import type { Branch, CartItem, Currency, Debtor, ExchangeRates, Product, Profile, Sale } from './types';
 
 // Helpers
 const loadStored = <T,>(key: string, fallback: T): T => {
@@ -124,27 +36,49 @@ const csvCell = (value: unknown) => {
   return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
 };
 
+const downloadCsv = (filename: string, rows: unknown[][]) => {
+  const csv = rows.map(r => r.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 const symbolFor = (currency: string) => (currency === 'USD' ? '$' : currency === 'ZiG' ? 'ZiG' : 'R');
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const PAYMENT_COLORS: Record<string, string> = {
+  Cash: '#0ea5e9', EcoCash: '#22c55e', Card: '#eab308', 'Bank Transfer': '#a855f7', Debt: '#f97316',
+};
 
-// Main App Component
-function ZIMKioskApp() {
-  const navigate = useNavigate();
+const emptyProductForm = {
+  name: '', barcode: '', sku: '', buyingPrice: 0, sellingPrice: 0, wholesalePrice: 0,
+  stock: 0, reorderLevel: 10, category: '', supplier: '', expiryDate: '',
+};
+const emptyDebtorForm = { name: '', phone: '', address: '', nationalId: '', notes: '' };
 
-  // Core State - All persisted to localStorage
-  const [isLoggedIn, setIsLoggedIn] = useState(() => !!loadStored<User | null>('zimkiosk_user', null));
-  const [currentUser, setCurrentUser] = useState<User>(() => loadStored<User>('zimkiosk_user', { name: '', role: '', branch: '' }));
-  const [currentBranch, setCurrentBranch] = useState('b1');
-  const [currentCurrency, setCurrentCurrency] = useState<'USD' | 'ZiG' | 'ZAR'>(() => loadStored<'USD' | 'ZiG' | 'ZAR'>('zimkiosk_currency', 'USD'));
-  const [exchangeRates, setExchangeRates] = useState({ ZiG: 27.45, ZAR: 18.25 });
-  
-  const [products, setProducts] = useState<Product[]>(() => loadStored<Product[]>('zimkiosk_products', initialProducts));
-  const [sales, setSales] = useState<Sale[]>(() => loadStored<Sale[]>('zimkiosk_sales', []));
-  const [debtors, setDebtors] = useState<Debtor[]>(() => loadStored<Debtor[]>('zimkiosk_debtors', initialDebtors));
-  const [notifications, setNotifications] = useState<Notification[]>([
-    { id: 'n1', type: 'lowstock', message: 'Baking Powder stock low (32 units)', time: '2m ago', read: false },
-    { id: 'n2', type: 'sale', message: 'Large sale recorded: $184.50', time: '14m ago', read: true },
-  ]);
-  
+// Main App Component (only rendered for a signed-in, active user)
+function ZIMKioskApp({ profile }: { profile: Profile }) {
+  const { logout: signOut } = useAuth();
+  const role: Role = profile.role;
+
+  // Live data from the database
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [debtors, setDebtors] = useState<Debtor[]>([]);
+  const [staff, setStaff] = useState<Profile[]>([]);
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRates>({ ZiG: 0, ZAR: 0 });
+  const [rateDraft, setRateDraft] = useState({ ZiG: '', ZAR: '' });
+  const [dataLoading, setDataLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [currentBranch, setCurrentBranch] = useState(profile.branchId ?? '');
+  const [currentCurrency, setCurrentCurrency] = useState<Currency>(() => loadStored<Currency>('zimkiosk_currency', 'USD'));
+
   // POS State
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -154,73 +88,110 @@ function ZIMKioskApp() {
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerName, setCustomerName] = useState('');
   const [cashReceived, setCashReceived] = useState(0);
   const [receiptSuccess, setReceiptSuccess] = useState(false);
 
   // Other States
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pos' | 'inventory' | 'debtors' | 'reports' | 'staff' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [scannerInstance, setScannerInstance] = useState<Html5Qrcode | null>(null);
-  
-  // New Product Form
-  const [newProduct, setNewProduct] = useState({
-    name: '', barcode: '', sku: '', buyingPrice: 0, sellingPrice: 0, wholesalePrice: 0, stock: 0, reorderLevel: 10, category: '', supplier: ''
-  });
+  const [newProduct, setNewProduct] = useState(emptyProductForm);
+  const [showAddDebtor, setShowAddDebtor] = useState(false);
+  const [debtorForm, setDebtorForm] = useState(emptyDebtorForm);
+  const [payingDebtor, setPayingDebtor] = useState<Debtor | null>(null);
+  const [payAmount, setPayAmount] = useState('');
 
-  // Persist to localStorage
-  useEffect(() => {
-    localStorage.setItem('zimkiosk_products', JSON.stringify(products));
-  }, [products]);
+  // What this role may see and do (the database enforces the same rules)
+  const canSeeSales = role !== 'storekeeper';
+  const canSeeDebtors = canAccessTab(role, 'debtors');
+  const canEditInventory = can(role, 'editInventory');
+  const canDeleteProducts = can(role, 'deleteProduct');
+  const canManageDebtors = can(role, 'manageDebtors');
+  const canEditRates = can(role, 'editExchangeRates');
+  const canManageStaff = can(role, 'manageStaff');
+  const canSwitchBranch = can(role, 'switchBranch');
+  const visibleTabs = (Object.keys(TAB_ACCESS) as Tab[]).filter(t => canAccessTab(role, t));
+
+  const goTo = (tab: Tab) => {
+    if (canAccessTab(role, tab)) setActiveTab(tab);
+  };
+
+  // ---- data loading ----
+  const refreshProducts = useCallback(async () => setProducts(await api.fetchProducts()), []);
+  const refreshSales = useCallback(async () => {
+    if (role !== 'storekeeper') setSales(await api.fetchSales());
+  }, [role]);
+  const refreshDebtors = useCallback(async () => {
+    if (canAccessTab(role, 'debtors')) setDebtors(await api.fetchDebtors());
+  }, [role]);
+  const refreshStaff = useCallback(async () => {
+    if (canAccessTab(role, 'staff')) setStaff(await api.fetchStaff());
+  }, [role]);
+
+  const loadAll = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const [b, r] = await Promise.all([api.fetchBranches(), api.fetchExchangeRates()]);
+      setBranches(b);
+      setExchangeRates(r);
+      setRateDraft({ ZiG: r.ZiG ? String(r.ZiG) : '', ZAR: r.ZAR ? String(r.ZAR) : '' });
+      await Promise.all([refreshProducts(), refreshSales(), refreshDebtors(), refreshStaff()]);
+    } catch (e) {
+      setLoadError(api.errMsg(e));
+    } finally {
+      setDataLoading(false);
+    }
+  }, [refreshProducts, refreshSales, refreshDebtors, refreshStaff]);
 
   useEffect(() => {
-    localStorage.setItem('zimkiosk_sales', JSON.stringify(sales));
-  }, [sales]);
+    loadAll();
+  }, [loadAll]);
 
+  // Admins without a home branch start on the first branch.
   useEffect(() => {
-    localStorage.setItem('zimkiosk_debtors', JSON.stringify(debtors));
-  }, [debtors]);
+    if (!currentBranch && branches.length > 0) setCurrentBranch(branches[0].id);
+  }, [currentBranch, branches]);
 
   useEffect(() => {
     localStorage.setItem('zimkiosk_currency', JSON.stringify(currentCurrency));
   }, [currentCurrency]);
 
-  // Offline detection
+  // A currency with no exchange rate yet cannot be used.
+  useEffect(() => {
+    if (currentCurrency !== 'USD' && !(exchangeRates[currentCurrency] > 0)) setCurrentCurrency('USD');
+  }, [currentCurrency, exchangeRates]);
+
+  // Offline detection: sales need the database, so reload when the connection returns.
   useEffect(() => {
     const handleOnline = () => {
       setIsOffline(false);
-      toast.success('Back online! Syncing data...', { duration: 2000 });
-      // Simulate sync
-      setTimeout(() => {
-        toast.success('All transactions synced successfully');
-      }, 1400);
+      toast.success('Back online', { duration: 2000 });
+      loadAll();
     };
     const handleOffline = () => {
       setIsOffline(true);
-      toast.error('Offline mode active. Sales will sync later.', { duration: 3000 });
+      toast.error('You are offline. Sales cannot be saved until the connection returns.', { duration: 4000 });
     };
-    
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
+  }, [loadAll]);
 
-  // Real-time Low Stock Alerts (simulated)
+  const branchName = branches.find(b => b.id === currentBranch)?.name ?? '';
 
   // Helper: Convert price to current currency
   const convertPrice = (priceUSD: number) => {
     if (currentCurrency === 'USD') return priceUSD;
-    if (currentCurrency === 'ZiG') return Math.round(priceUSD * exchangeRates.ZiG * 100) / 100;
-    if (currentCurrency === 'ZAR') return Math.round(priceUSD * exchangeRates.ZAR * 100) / 100;
-    return priceUSD;
+    return round2(priceUSD * exchangeRates[currentCurrency]);
   };
 
-  const currencySymbol = currentCurrency === 'USD' ? '$' : currentCurrency === 'ZiG' ? 'ZiG' : 'R';
+  const currencySymbol = symbolFor(currentCurrency);
 
   // Filtered Products for POS
   const filteredProducts = products.filter(p =>
@@ -229,11 +200,10 @@ function ZIMKioskApp() {
     p.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Cart Calculations
+  // Cart Calculations (same rounding as the database function)
   const cartTotal = cart.reduce((sum, item) => {
-    const itemPrice = convertPrice(item.sellingPrice);
-    const discounted = itemPrice * (1 - item.discount / 100);
-    return sum + discounted * item.quantity;
+    const unit = convertPrice(item.sellingPrice);
+    return sum + round2(unit * item.quantity * (1 - item.discount / 100));
   }, 0);
 
   const cartCount = cart.reduce((sum, i) => sum + i.quantity, 0);
@@ -342,8 +312,11 @@ function ZIMKioskApp() {
   };
 
   const updateCartDiscount = (id: string, disc: number) => {
+    const safe = Number.isFinite(disc) ? disc : 0;
+    const limit = maxDiscount(role);
+    if (safe > limit) toast.warning(`Your role can give at most ${limit}% discount`);
     setCart(prev => prev.map(item => 
-      item.id === id ? { ...item, discount: Math.min(100, Math.max(0, disc)) } : item
+      item.id === id ? { ...item, discount: Math.min(limit, Math.max(0, safe)) } : item
     ));
   };
 
@@ -361,115 +334,82 @@ function ZIMKioskApp() {
     setShowPaymentModal(true);
   };
 
-  const completeSale = () => {
-    if (cart.length === 0) return;
+  const closeReceipt = () => {
+    setShowReceipt(false);
+    setReceiptSuccess(false);
+  };
 
-    // Cash validation
+  const completeSale = async () => {
+    if (cart.length === 0 || submitting) return;
+
+    if (isOffline) {
+      toast.error('You are offline. Reconnect to complete the sale.');
+      return;
+    }
     if (paymentMethod === 'Cash' && cashReceived < cartTotal) {
       toast.error('Insufficient cash received');
       return;
     }
-
     if (paymentMethod === 'Debt' && !customerPhone.trim()) {
       toast.error('Enter the customer phone number for a credit sale');
       return;
     }
 
-    const saleItems = cart.map(item => ({
-      name: item.name,
-      quantity: item.quantity,
-      price: convertPrice(item.sellingPrice),
-      total: convertPrice(item.sellingPrice) * item.quantity * (1 - item.discount / 100)
-    }));
+    setSubmitting(true);
+    try {
+      // The database re-prices the items, applies the rules for this role and updates stock atomically.
+      const saved = await api.createSale({
+        paymentMethod,
+        currency: currentCurrency,
+        items: cart.map(i => ({ product_id: i.id, quantity: i.quantity, discount: i.discount })),
+        customerPhone: customerPhone.trim() || undefined,
+        customerName: customerName.trim() || undefined,
+        branchId: currentBranch,
+      });
 
-    const newSale: Sale = {
-      id: 'SALE-' + Date.now(),
-      date: new Date().toISOString(),
-      items: saleItems,
-      total: cartTotal,
-      paymentMethod: paymentMethod,
-      currency: currentCurrency,
-      cashier: currentUser.name || 'Cashier',
-      branch: branches.find(b => b.id === currentBranch)?.name || 'Harare Main',
-      customerPhone: paymentMethod === 'EcoCash' ? customerPhone : undefined,
-      cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined
-    };
+      const newSale: Sale = {
+        id: saved.id,
+        date: saved.date,
+        items: cart.map(item => {
+          const unit = convertPrice(item.sellingPrice);
+          return { name: item.name, quantity: item.quantity, price: unit, total: round2(unit * item.quantity * (1 - item.discount / 100)) };
+        }),
+        total: saved.total,
+        totalUsd: saved.totalUsd,
+        paymentMethod,
+        currency: currentCurrency,
+        cashier: profile.fullName,
+        branch: branchName,
+        customerPhone: customerPhone.trim() || undefined,
+        cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
+        branchId: currentBranch,
+        cashierId: profile.id,
+      };
 
-    // Update inventory stock
-    const updatedProducts = products.map(prod => {
-      const cartItem = cart.find(c => c.id === prod.id);
-      if (cartItem) {
-        return { ...prod, stock: Math.max(0, prod.stock - cartItem.quantity) };
-      }
-      return prod;
-    });
-    setProducts(updatedProducts);
+      setLastSale(newSale);
+      setCart([]);
+      setShowPaymentModal(false);
+      setShowReceipt(true);
+      setReceiptSuccess(true);
+      setCustomerPhone('');
+      setCustomerName('');
+      setCashReceived(0);
+      setPaymentMethod('Cash');
+      toast.success('Sale completed successfully!', { description: `Receipt #${saved.id.slice(0, 8)}` });
 
-    // Save sale
-    const updatedSales = [newSale, ...sales].slice(0, 50);
-    setSales(updatedSales);
-
-    // If Debt, create/update debtor
-    if (paymentMethod === 'Debt' && customerPhone) {
-      const existingDebtor = debtors.find(d => d.phone === customerPhone);
-      if (existingDebtor) {
-        const updatedDebtors = debtors.map(d => 
-          d.phone === customerPhone ? { ...d, totalOwed: d.totalOwed + cartTotal, lastPayment: new Date().toISOString().split('T')[0] } : d
-        );
-        setDebtors(updatedDebtors);
-      } else {
-        const newDebtor: Debtor = {
-          id: 'deb-' + Date.now(),
-          name: 'Customer ' + customerPhone.slice(-4),
-          phone: customerPhone,
-          address: 'Walk-in Customer',
-          nationalId: 'N/A',
-          totalOwed: cartTotal,
-          lastPayment: new Date().toISOString().split('T')[0],
-          notes: 'POS credit sale'
-        };
-        setDebtors([...debtors, newDebtor]);
-      }
+      await Promise.all([refreshProducts(), refreshSales(), refreshDebtors()]);
+    } catch (e) {
+      toast.error(api.errMsg(e));
+      refreshProducts().catch(() => {}); // stock may have changed under us
+    } finally {
+      setSubmitting(false);
     }
-
-    // Generate notification
-    const newNotif: Notification = {
-      id: 'sale-' + Date.now(),
-      type: 'sale',
-      message: `Sale completed: ${currencySymbol}${cartTotal.toFixed(2)}`,
-      time: 'just now',
-      read: false
-    };
-    setNotifications([newNotif, ...notifications].slice(0, 8));
-
-    // Save receipt
-    setLastSale(newSale);
-    
-    // Clear cart & close modals
-    setCart([]);
-    setShowPaymentModal(false);
-    setShowReceipt(true);
-    setReceiptSuccess(true);
-    setCustomerPhone('');
-    setCashReceived(0);
-    setPaymentMethod('Cash');
-
-    toast.success('Sale completed successfully!', { 
-      description: `Receipt #${newSale.id.slice(0,8)}`, 
-      action: { label: "Print Receipt", onClick: () => setShowReceipt(true) }
-    });
-
-    // Auto return to dashboard after 5 seconds
-    setTimeout(() => {
-      setShowReceipt(false);
-      setReceiptSuccess(false);
-      setActiveTab('dashboard');
-    }, 5000);
   };
 
   // Print Receipt
   const printReceipt = () => {
     if (!lastSale) return;
+    const branchLocation = branches.find(b => b.id === lastSale.branchId)?.location ?? '';
     const printWindow = window.open('', '', 'width=380,height=650');
     if (!printWindow) return;
 
@@ -487,7 +427,7 @@ function ZIMKioskApp() {
       <div class="header">
         <div class="shop">ZIM KIOSK</div>
         <div>${escapeHtml(lastSale.branch)}</div>
-        <div>Harare, Zimbabwe • VAT: 12345678</div>
+        <div>${escapeHtml(branchLocation)}</div>
       </div>
       <div>Receipt: ${escapeHtml(lastSale.id)}</div>
       <div>Date: ${format(new Date(lastSale.date), 'dd MMM yyyy HH:mm')}</div>
@@ -503,9 +443,7 @@ function ZIMKioskApp() {
       <div class="total">TOTAL: ${symbolFor(lastSale.currency)}${lastSale.total.toFixed(2)}</div>
       <br/>
       <div class="footer">
-        Thank you for shopping at ZIM KIOSK!<br/>
-        EcoCash: *151# • Card accepted<br/>
-        www.zimkiosk.co.zw
+        Thank you for shopping at ZIM KIOSK!
       </div>
       </body></html>`;
     
@@ -515,7 +453,8 @@ function ZIMKioskApp() {
   };
 
   // Inventory Functions
-  const saveProduct = () => {
+  const saveProduct = async () => {
+    if (!canEditInventory || submitting) return;
     if (!newProduct.name.trim()) {
       toast.error('Product name required');
       return;
@@ -530,7 +469,7 @@ function ZIMKioskApp() {
     }
 
     const barcode = newProduct.barcode.trim() || '6' + Math.floor(Math.random() * 10000000000);
-    const sku = newProduct.sku.trim() || newProduct.name.slice(0,3).toUpperCase() + '-' + Date.now().toString().slice(-4);
+    const sku = newProduct.sku.trim() || newProduct.name.trim().slice(0, 3).toUpperCase() + '-' + Date.now().toString().slice(-4);
     const clash = products.find(p => p.id !== editingProduct?.id && (p.barcode === barcode || p.sku === sku));
     if (clash) {
       toast.error(`Barcode or SKU already used by "${clash.name}"`);
@@ -538,37 +477,32 @@ function ZIMKioskApp() {
     }
 
     const productData: Product = {
-      id: editingProduct ? editingProduct.id : 'p' + Date.now(),
+      id: editingProduct ? editingProduct.id : '',
       name: newProduct.name.trim(),
       barcode,
       sku,
       buyingPrice: newProduct.buyingPrice || 0,
       sellingPrice: newProduct.sellingPrice,
-      wholesalePrice: newProduct.wholesalePrice || Math.round(newProduct.sellingPrice * 0.85 * 100) / 100,
+      wholesalePrice: newProduct.wholesalePrice || round2(newProduct.sellingPrice * 0.85),
       stock: newProduct.stock,
-      reorderLevel: newProduct.reorderLevel ?? 10,
-      category: newProduct.category || 'General',
-      supplier: newProduct.supplier || 'Local Supplier',
-      expiryDate: editingProduct?.expiryDate,
+      reorderLevel: newProduct.reorderLevel,
+      category: newProduct.category.trim() || 'General',
+      supplier: newProduct.supplier.trim() || 'Unspecified',
+      expiryDate: newProduct.expiryDate || undefined,
     };
 
-    if (editingProduct) {
-      setProducts(products.map(p => p.id === editingProduct.id ? productData : p));
-      toast.success('Product updated');
-    } else {
-      setProducts([...products, productData]);
-      toast.success('New product added to inventory');
-    }
-
-    setShowAddProduct(false);
-    setEditingProduct(null);
-    setNewProduct({ name: '', barcode: '', sku: '', buyingPrice: 0, sellingPrice: 0, wholesalePrice: 0, stock: 0, reorderLevel: 10, category: '', supplier: '' });
-  };
-
-  const deleteProduct = (id: string) => {
-    if (window.confirm('Delete this product?')) {
-      setProducts(products.filter(p => p.id !== id));
-      toast.success('Product removed');
+    setSubmitting(true);
+    try {
+      await api.saveProduct(productData, { isNew: !editingProduct, previousStock: editingProduct?.stock, userId: profile.id });
+      await refreshProducts();
+      toast.success(editingProduct ? 'Product updated' : 'Product added');
+      setShowAddProduct(false);
+      setEditingProduct(null);
+      setNewProduct(emptyProductForm);
+    } catch (e) {
+      toast.error(api.errMsg(e));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -576,138 +510,217 @@ function ZIMKioskApp() {
     setEditingProduct(product);
     setNewProduct({
       name: product.name, barcode: product.barcode, sku: product.sku,
-      buyingPrice: product.buyingPrice, sellingPrice: product.sellingPrice,
-      wholesalePrice: product.wholesalePrice, stock: product.stock, reorderLevel: product.reorderLevel,
-      category: product.category, supplier: product.supplier
+      buyingPrice: product.buyingPrice, sellingPrice: product.sellingPrice, wholesalePrice: product.wholesalePrice,
+      stock: product.stock, reorderLevel: product.reorderLevel,
+      category: product.category, supplier: product.supplier, expiryDate: product.expiryDate ?? '',
     });
     setShowAddProduct(true);
   };
 
-  // Debtors
-  // Debtor Add handled via prompt for demo simplicity
+  const openAddProduct = () => {
+    setEditingProduct(null);
+    setNewProduct(emptyProductForm);
+    setShowAddProduct(true);
+  };
 
-  const recordDebtorPayment = (debtorId: string, amount: number) => {
-    setDebtors(debtors.map(d => 
-      d.id === debtorId 
-        ? { ...d, totalOwed: Math.max(0, d.totalOwed - amount), lastPayment: format(new Date(), 'yyyy-MM-dd') } 
-        : d
-    ));
-    toast.success(`Payment of ${currencySymbol}${amount} recorded`);
+  const deleteProduct = async (id: string) => {
+    if (!canDeleteProducts) return;
+    const product = products.find(p => p.id === id);
+    if (!confirm(`Delete "${product?.name ?? 'this product'}"? This cannot be undone.`)) return;
+    try {
+      await api.deleteProduct(id);
+      await refreshProducts();
+      toast.success('Product deleted');
+    } catch (e) {
+      toast.error(api.errMsg(e));
+    }
+  };
+
+  const exportInventoryCSV = () => {
+    downloadCsv('zimkiosk_inventory.csv', [
+      ['name', 'barcode', 'sku', 'category', 'supplier', 'buying_price_usd', 'selling_price_usd', 'stock', 'reorder_level'],
+      ...products.map(p => [p.name, p.barcode, p.sku, p.category, p.supplier, p.buyingPrice, p.sellingPrice, p.stock, p.reorderLevel]),
+    ]);
+  };
+
+  // Debtors (all amounts in USD)
+  const saveDebtor = async () => {
+    if (!canManageDebtors || submitting) return;
+    if (!debtorForm.name.trim() || !debtorForm.phone.trim()) {
+      toast.error('Name and phone number are required');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.createDebtor({
+        name: debtorForm.name.trim(), phone: debtorForm.phone.trim(), address: debtorForm.address.trim(),
+        nationalId: debtorForm.nationalId.trim(), notes: debtorForm.notes.trim(), branchId: currentBranch,
+      });
+      await refreshDebtors();
+      toast.success('Debtor added');
+      setShowAddDebtor(false);
+      setDebtorForm(emptyDebtorForm);
+    } catch (e) {
+      toast.error(api.errMsg(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitDebtorPayment = async () => {
+    if (!payingDebtor || submitting) return;
+    const amount = parseFloat(payAmount);
+    if (!(amount > 0)) {
+      toast.error('Enter an amount greater than 0');
+      return;
+    }
+    if (amount > payingDebtor.totalOwed) {
+      toast.error(`That is more than the $${payingDebtor.totalOwed.toFixed(2)} owed`);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.recordDebtorPayment(payingDebtor.id, amount);
+      await refreshDebtors();
+      toast.success(`Payment of $${amount.toFixed(2)} recorded`);
+      setPayingDebtor(null);
+      setPayAmount('');
+    } catch (e) {
+      toast.error(api.errMsg(e));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const openWhatsApp = (debtor: Debtor) => {
-    const message = `Hello ${debtor.name.split(' ')[0]}, this is ZIM KIOSK. You have an outstanding balance of ${currencySymbol}${debtor.totalOwed.toFixed(2)}. Please pay at your earliest convenience. Thank you!`;
-    window.open(`https://wa.me/${debtor.phone.replace(/\s/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+    const message = `Hello ${debtor.name.split(' ')[0]}, this is ZIM KIOSK. You have an outstanding balance of $${debtor.totalOwed.toFixed(2)}. Please pay at your earliest convenience.`;
+    window.open(`https://wa.me/${debtor.phone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  // Settings & staff
+  const saveRates = async () => {
+    const zig = parseFloat(rateDraft.ZiG);
+    const zar = parseFloat(rateDraft.ZAR);
+    if (!(zig > 0) || !(zar > 0)) {
+      toast.error('Enter an exchange rate above 0 for both currencies');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const rates = { ZiG: zig, ZAR: zar };
+      await api.saveExchangeRates(rates);
+      setExchangeRates(rates);
+      toast.success('Exchange rates saved');
+    } catch (e) {
+      toast.error(api.errMsg(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const changeStaff = async (id: string, updates: Parameters<typeof api.updateStaff>[1]) => {
+    try {
+      await api.updateStaff(id, updates);
+      await refreshStaff();
+      toast.success('Staff account updated');
+    } catch (e) {
+      toast.error(api.errMsg(e));
+    }
   };
 
   // Reports: Export CSV
   const exportSalesCSV = () => {
-    if (sales.length === 0) {
+    if (branchSales.length === 0) {
       toast.error('No sales data to export');
       return;
     }
-    const headers = 'Date,Receipt,Cashier,Branch,Total,Currency,Payment\n';
-    const rows = sales.map(s => 
-      [format(new Date(s.date), 'yyyy-MM-dd HH:mm'), s.id, s.cashier, s.branch, s.total, s.currency, s.paymentMethod].map(csvCell).join(',')
-    ).join('\n');
-    
-    const csv = headers + rows;
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `zimkiosk_sales_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`zimkiosk_sales_${format(new Date(), 'yyyy-MM-dd')}.csv`, [
+      ['Date', 'Receipt', 'Cashier', 'Branch', 'Total', 'Currency', 'Total (USD)', 'Payment'],
+      ...branchSales.map(s => [format(new Date(s.date), 'yyyy-MM-dd HH:mm'), s.id, s.cashier, s.branch, s.total, s.currency, s.totalUsd, s.paymentMethod]),
+    ]);
     toast.success('Sales report exported');
   };
 
-  // Login Handler
-  const handleLogin = (role: string, name: string) => {
-    const user: User = { 
-      name: name || 'Demo User', 
-      role, 
-      branch: branches[0].name 
-    };
-    setCurrentUser(user);
-    setIsLoggedIn(true);
-    localStorage.setItem('zimkiosk_user', JSON.stringify(user));
-    setActiveTab('dashboard');
-    toast.success(`Welcome back, ${user.name}`, { description: `${role} • ${branches[0].name}` });
-    navigate('/');
-  };
-
-  const logout = () => {
-    setIsLoggedIn(false);
-    setCurrentUser({ name: '', role: '', branch: '' });
-    localStorage.removeItem('zimkiosk_user');
+  const logout = async () => {
     setCart([]);
-    navigate('/login');
-    toast.info('Logged out successfully');
+    await signOut();
+    toast.info('Logged out');
   };
 
-  // Analytics Data for Charts
-  const salesTrendData = sales.length > 0 ? sales.slice(0, 7).reverse().map((sale) => ({
-    day: format(new Date(sale.date), 'dd MMM'),
-    revenue: sale.total
-  })) : [
-    { day: '12 Jan', revenue: 234 }, { day: '13 Jan', revenue: 318 }, { day: '14 Jan', revenue: 287 },
-    { day: '15 Jan', revenue: 412 }, { day: '16 Jan', revenue: 355 }, { day: '17 Jan', revenue: 529 }, { day: '18 Jan', revenue: 398 }
-  ];
+  // Analytics (all figures in USD so mixed-currency sales add up correctly)
+  const branchSales = useMemo(
+    () => sales.filter(s => !canSwitchBranch || !currentBranch || s.branchId === currentBranch),
+    [sales, canSwitchBranch, currentBranch]
+  );
+  const branchDebtors = useMemo(
+    () => debtors.filter(d => !canSwitchBranch || !currentBranch || d.branchId === currentBranch),
+    [debtors, canSwitchBranch, currentBranch]
+  );
 
-  const paymentBreakdown = [
-    { name: 'Cash', value: Math.round(sales.filter(s => s.paymentMethod === 'Cash').reduce((a,b) => a + b.total, 0) || 1240) },
-    { name: 'EcoCash', value: Math.round(sales.filter(s => s.paymentMethod === 'EcoCash').reduce((a,b) => a + b.total, 0) || 890) },
-    { name: 'Card', value: Math.round(sales.filter(s => s.paymentMethod === 'Card').reduce((a,b) => a + b.total, 0) || 465) },
-    { name: 'Debt', value: Math.round(sales.filter(s => s.paymentMethod === 'Debt').reduce((a,b) => a + b.total, 0) || 230) }
-  ];
+  const todayKey = format(new Date(), 'yyyy-MM-dd');
+  const todaySalesList = branchSales.filter(s => format(new Date(s.date), 'yyyy-MM-dd') === todayKey);
+  const todayRevenue = todaySalesList.reduce((a, s) => a + s.totalUsd, 0);
+  const totalRevenue = branchSales.reduce((a, s) => a + s.totalUsd, 0);
 
-  const topProducts = products.sort((a,b) => b.stock - a.stock).slice(0, 5);
+  const salesTrendData = Array.from({ length: 7 }, (_, i) => {
+    const day = subDays(new Date(), 6 - i);
+    const key = format(day, 'yyyy-MM-dd');
+    return {
+      day: format(day, 'dd MMM'),
+      revenue: round2(branchSales.filter(s => format(new Date(s.date), 'yyyy-MM-dd') === key).reduce((a, s) => a + s.totalUsd, 0)),
+    };
+  });
 
-  // Low Stock Items
+  const paymentBreakdown = api.PAYMENT_METHODS
+    .map(name => ({ name, value: round2(branchSales.filter(s => s.paymentMethod === name).reduce((a, s) => a + s.totalUsd, 0)) }))
+    .filter(p => p.value > 0);
+
+  const topSelling = useMemo(() => {
+    const units = new Map<string, number>();
+    branchSales.forEach(s => s.items.forEach(i => units.set(i.name, (units.get(i.name) ?? 0) + i.quantity)));
+    return [...units.entries()].map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty).slice(0, 5);
+  }, [branchSales]);
+
   const lowStockItems = products.filter(p => p.stock <= p.reorderLevel);
+  const outOfStock = products.filter(p => p.stock <= 0).length;
+  const totalUnits = products.reduce((a, p) => a + p.stock, 0);
+  const totalOwed = branchDebtors.reduce((a, d) => a + d.totalOwed, 0);
 
-  // Total Revenue
-  const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0) || 2847.50;
-  const todaySales = sales.filter(s => format(new Date(s.date), 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')).reduce((a, s) => a + s.total, 0) || 498;
+  const kpis = canSeeSales
+    ? [
+        { label: role === 'cashier' ? 'Your Sales Today' : "Today's Revenue", value: `$${todayRevenue.toFixed(2)}`, note: `${todaySalesList.length} sale${todaySalesList.length === 1 ? '' : 's'} today` },
+        { label: role === 'cashier' ? 'Your Total Sales' : 'Total Revenue', value: `$${totalRevenue.toFixed(2)}`, note: 'All time, in USD' },
+        { label: 'Transactions', value: String(branchSales.length), note: 'All time' },
+        { label: 'Low Stock Alerts', value: String(lowStockItems.length), note: lowStockItems.length > 0 ? 'Action needed' : 'All stocked' },
+      ]
+    : [
+        { label: 'Products', value: String(products.length), note: 'In the catalogue' },
+        { label: 'Low Stock Alerts', value: String(lowStockItems.length), note: lowStockItems.length > 0 ? 'Action needed' : 'All stocked' },
+        { label: 'Out of Stock', value: String(outOfStock), note: outOfStock > 0 ? 'Restock now' : 'None' },
+        { label: 'Units in Stock', value: String(totalUnits), note: 'Across all products' },
+      ];
 
-  // Render Login Screen
-  if (!isLoggedIn) {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+
+  if (dataLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-10">
-            <div className="mx-auto w-20 h-20 rounded-3xl bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-600 flex items-center justify-center mb-6 shadow-2xl">
-              <span className="text-white text-4xl font-bold tracking-[-1.5px]">ZK</span>
-            </div>
-            <h1 className="text-5xl font-semibold text-white tracking-[-1.5px]">ZIM KIOSK</h1>
-            <p className="text-sky-400 mt-2 text-lg">Smart POS for Zimbabwe</p>
-            <div className="mt-1 text-xs text-slate-500">Offline • Multi-Currency • EcoCash</div>
-          </div>
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300 gap-3" role="status">
+        <Loader2 className="animate-spin text-sky-400" size={36} />
+        <div>Loading your store…</div>
+      </div>
+    );
+  }
 
-          <div className="glass bg-slate-900/70 border border-slate-800 rounded-3xl p-8">
-            <div className="mb-8">
-              <h3 className="text-white text-xl font-semibold mb-3">Sign in to your store</h3>
-              <p className="text-slate-400 text-sm">Select your role to continue</p>
-            </div>
-
-            <div className="space-y-3">
-              {roles.map((role, idx) => (
-                <button key={idx} onClick={() => handleLogin(role, role === 'Cashier' ? 'Tafadzwa M.' : role === 'Branch Manager' ? 'Rumbidzai K.' : 'Admin Demo')}
-                  className="w-full flex items-center justify-between bg-slate-800 hover:bg-slate-700 active:bg-slate-900 transition-all px-6 py-4 rounded-2xl text-left group">
-                  <div>
-                    <div className="text-white font-medium">{role}</div>
-                    <div className="text-xs text-slate-400">Demo account ready</div>
-                  </div>
-                  <ArrowRight className="text-sky-400 group-hover:translate-x-1 transition" />
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-8 text-center text-xs text-slate-500">
-              Works offline • PWA ready • Zimbabwean Retail
-            </div>
-          </div>
+  if (loadError && products.length === 0 && branches.length === 0) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center p-6 gap-4">
+        <AlertTriangle className="text-orange-400" size={40} />
+        <div className="text-white text-xl font-semibold">Could not load your store</div>
+        <div className="text-slate-400 max-w-md text-sm">{loadError}</div>
+        <div className="flex gap-3">
+          <button onClick={() => { setDataLoading(true); loadAll(); }} className="px-6 py-3 rounded-2xl bg-sky-600 text-white font-medium flex items-center gap-2"><RefreshCw size={16} /> Try again</button>
+          <button onClick={logout} className="px-6 py-3 rounded-2xl bg-slate-800 text-slate-200">Sign out</button>
         </div>
       </div>
     );
@@ -729,29 +742,37 @@ function ZIMKioskApp() {
               <div className="text-[10px] text-sky-400 -mt-1">ZIMBABWE SMART POS</div>
             </div>
           </div>
-          
-          {/* Branch Selector */}
+
+          {/* Branch: admins can switch, everyone else is fixed to their own branch */}
           <div className="ml-6 flex items-center gap-1.5 bg-slate-900 px-3 py-1.5 rounded-2xl border border-slate-800 text-sm">
-            <span className="text-slate-400">Branch:</span> 
-            <select value={currentBranch} onChange={(e) => setCurrentBranch(e.target.value)} className="bg-transparent font-medium focus:outline-none cursor-pointer">
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            <span className="text-slate-400">Branch:</span>
+            {canSwitchBranch ? (
+              <select aria-label="Branch" value={currentBranch} onChange={(e) => setCurrentBranch(e.target.value)} className="bg-transparent font-medium focus:outline-none cursor-pointer">
+                {branches.map(b => <option key={b.id} value={b.id} className="bg-slate-900">{b.name}</option>)}
+              </select>
+            ) : (
+              <span className="font-medium">{branchName || 'Not assigned'}</span>
+            )}
           </div>
         </div>
 
         {/* Status & Controls */}
         <div className="flex items-center gap-4">
-          {/* Currency Switcher */}
+          {/* Currency Switcher (a currency is enabled once an admin sets its rate) */}
           <div className="flex bg-slate-900 rounded-2xl border border-slate-700 p-0.5 text-sm">
-            {(['USD', 'ZiG', 'ZAR'] as const).map(curr => (
-              <button key={curr} onClick={() => setCurrentCurrency(curr)} 
-                className={`px-4 py-1.5 rounded-[14px] font-medium transition-all ${currentCurrency === curr ? 'bg-sky-500 text-white shadow' : 'hover:bg-slate-800 text-slate-400'}`}>
-                {curr}
-              </button>
-            ))}
+            {(['USD', 'ZiG', 'ZAR'] as const).map(curr => {
+              const usable = curr === 'USD' || exchangeRates[curr] > 0;
+              return (
+                <button key={curr} disabled={!usable} onClick={() => setCurrentCurrency(curr)}
+                  title={usable ? undefined : 'An administrator has not set this exchange rate yet'}
+                  className={`px-4 py-1.5 rounded-[14px] font-medium transition-all ${currentCurrency === curr ? 'bg-sky-500 text-white shadow' : usable ? 'hover:bg-slate-800 text-slate-400' : 'text-slate-600 cursor-not-allowed'}`}>
+                  {curr}
+                </button>
+              );
+            })}
           </div>
 
-          {/* Offline Status */}
+          {/* Connection Status */}
           <div className={`px-3.5 py-1 rounded-2xl flex items-center gap-2 text-xs font-medium ${isOffline ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
             {isOffline ? <><AlertTriangle size={14} /> OFFLINE</> : 'ONLINE'}
             <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
@@ -760,35 +781,42 @@ function ZIMKioskApp() {
           {/* User Profile */}
           <div className="flex items-center gap-3 pl-4 border-l border-slate-800">
             <div className="text-right text-sm">
-              <div className="font-semibold">{currentUser.name}</div>
-              <div className="text-[10px] text-slate-400">{currentUser.role}</div>
+              <div className="font-semibold" data-testid="user-name">{profile.fullName}</div>
+              <div className="text-[10px] text-slate-400" data-testid="user-role">{ROLE_LABELS[role]}</div>
             </div>
-            <button onClick={logout} className="p-2 hover:bg-slate-900 rounded-xl transition"><LogOut size={17} /></button>
+            <button onClick={logout} aria-label="Log out" className="p-2 hover:bg-slate-900 rounded-xl transition"><LogOut size={17} /></button>
           </div>
         </div>
       </header>
 
+      {loadError && (
+        <div role="alert" className="bg-orange-950/60 border-b border-orange-900/60 text-orange-300 text-sm px-6 py-2 flex items-center justify-between">
+          <span>Some data could not be refreshed: {loadError}</span>
+          <button onClick={loadAll} className="underline">Retry</button>
+        </div>
+      )}
+
       {/* Sidebar + Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar Navigation */}
+        {/* Sidebar Navigation (only the pages this role may open) */}
         <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col py-4">
           <div className="px-5 pb-4">
             <div className="text-xs uppercase tracking-[1px] text-slate-500 mb-3 px-3">MENU</div>
           </div>
-          
+
           {[
             { id: 'dashboard', label: 'Dashboard', icon: Home },
             { id: 'pos', label: 'Smart POS', icon: ShoppingCart },
             { id: 'inventory', label: 'Inventory', icon: Package },
             { id: 'debtors', label: 'Debtors', icon: Users },
-            { id: 'reports', label: 'Reports & AI', icon: TrendingUp },
+            { id: 'reports', label: 'Reports', icon: TrendingUp },
             { id: 'staff', label: 'Staff', icon: Users },
             { id: 'settings', label: 'Settings', icon: Settings },
-          ].map(item => {
+          ].filter(item => visibleTabs.includes(item.id as Tab)).map(item => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
-              <button key={item.id} onClick={() => setActiveTab(item.id as any)}
+              <button key={item.id} onClick={() => goTo(item.id as Tab)} data-testid={`nav-${item.id}`}
                 className={`flex items-center gap-3 px-5 py-[13px] mx-2 my-0.5 rounded-2xl text-sm font-medium transition-all ${isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-950 hover:text-slate-200'}`}>
                 <Icon size={19} /> {item.label}
               </button>
@@ -796,96 +824,102 @@ function ZIMKioskApp() {
           })}
 
           <div className="flex-1" />
-          
+
           <div className="mx-5 mt-2 px-4 py-4 border-t border-slate-800 text-xs text-slate-500">
-            <div>Version 3.2.1 • PWA Ready</div>
-            <div>Offline-first architecture</div>
+            <div>{ROLE_LABELS[role]}</div>
+            <div>{branchName || 'No branch assigned'}</div>
           </div>
         </div>
 
         {/* Main Content Area */}
         <div className="flex-1 overflow-auto p-8">
           <AnimatePresence mode="wait">
-            
+
             {/* DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div>
                 <div className="flex items-end justify-between mb-9">
                   <div>
-                    <div className="text-4xl font-semibold tracking-[-1.4px]">Good morning, {currentUser.name.split(' ')[0]}.</div>
-                    <div className="text-lg text-slate-400">Harare Main • {format(new Date(), 'EEEE, dd MMMM yyyy')}</div>
+                    <div className="text-4xl font-semibold tracking-[-1.4px]">{greeting}, {profile.fullName.split(' ')[0]}.</div>
+                    <div className="text-lg text-slate-400">{branchName} • {format(new Date(), 'EEEE, dd MMMM yyyy')}</div>
                   </div>
-                  <button onClick={() => setActiveTab('pos')} className="touch-btn flex items-center gap-2 bg-sky-600 hover:bg-sky-500 px-6 py-3 rounded-2xl font-semibold shadow-lg">
-                    <ShoppingCart size={19} /> Open POS Terminal
-                  </button>
+                  {canAccessTab(role, 'pos') && (
+                    <button onClick={() => goTo('pos')} className="touch-btn flex items-center gap-2 bg-sky-600 hover:bg-sky-500 px-6 py-3 rounded-2xl font-semibold shadow-lg">
+                      <ShoppingCart size={19} /> Open POS Terminal
+                    </button>
+                  )}
                 </div>
 
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-9">
-                  {[
-                    { label: "Today's Revenue", value: `${currencySymbol}${todaySales.toFixed(2)}`, change: "+18%" },
-                    { label: "Total Revenue", value: `${currencySymbol}${totalRevenue.toFixed(2)}`, change: "+31%" },
-                    { label: "Transactions", value: sales.length || 31, change: "+9" },
-                    { label: "Low Stock Alerts", value: lowStockItems.length, change: lowStockItems.length > 0 ? "Action Needed" : "Good" }
-                  ].map((kpi, idx) => (
+                  {kpis.map((kpi, idx) => (
                     <div key={idx} className="glass border border-slate-800/70 rounded-3xl p-6">
                       <div className="text-sm text-slate-400 mb-1">{kpi.label}</div>
                       <div className="text-4xl font-semibold tracking-tight mt-1">{kpi.value}</div>
-                      <div className="text-emerald-400 text-sm font-medium mt-3 flex items-center gap-1">{kpi.change}</div>
+                      <div className="text-slate-400 text-sm mt-3">{kpi.note}</div>
                     </div>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                  {/* Revenue Trend */}
-                  <div className="lg:col-span-2 glass border border-slate-800 rounded-3xl p-7">
-                    <div className="flex justify-between mb-6 items-center">
-                      <div className="font-semibold text-lg">Revenue Trend (7 Days)</div>
-                      <div className="text-xs px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl">+23% vs last week</div>
-                    </div>
-                    <div className="h-80 -mx-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={salesTrendData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <XAxis dataKey="day" stroke="#64748b" />
-                          <YAxis stroke="#64748b" />
-                          <Tooltip contentStyle={{ background: '#0f172a', border: 'none' }} />
-                          <Line type="natural" dataKey="revenue" stroke="#38bdf8" strokeWidth={3.5} dot={{ fill: '#0ea5e9', r: 4 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Payment Breakdown & AI */}
-                  <div className="space-y-5">
-                    <div className="glass border border-slate-800 rounded-3xl p-7">
-                      <div className="font-semibold mb-4">Payment Mix</div>
-                      <div className="h-64">
-                        <ResponsiveContainer>
-                          <PieChart>
-                            <Pie data={paymentBreakdown} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={58} outerRadius={95}>
-                              {paymentBreakdown.map((_, index) => <Cell key={index} fill={['#0ea5e9', '#22c55e', '#eab308', '#f97316'][index]} />)}
-                            </Pie>
-                            <Tooltip />
-                          </PieChart>
+                {canSeeSales && (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                    {/* Revenue Trend */}
+                    <div className="lg:col-span-2 glass border border-slate-800 rounded-3xl p-7">
+                      <div className="flex justify-between mb-6 items-center">
+                        <div className="font-semibold text-lg">Revenue Trend (7 Days, USD)</div>
+                      </div>
+                      <div className="h-80 -mx-2">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={salesTrendData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                            <XAxis dataKey="day" stroke="#64748b" />
+                            <YAxis stroke="#64748b" />
+                            <Tooltip contentStyle={{ background: '#0f172a', border: 'none' }} formatter={(v) => `$${Number(v).toFixed(2)}`} />
+                            <Line type="natural" dataKey="revenue" stroke="#38bdf8" strokeWidth={3.5} dot={{ fill: '#0ea5e9', r: 4 }} />
+                          </LineChart>
                         </ResponsiveContainer>
                       </div>
-                      <div className="grid grid-cols-2 text-xs gap-x-6 pt-1">
-                        {paymentBreakdown.map((p,i) => <div key={i} className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded" style={{background: ['#0ea5e9','#22c55e','#eab308','#f97316'][i]}} />{p.name}</div>)}
-                      </div>
                     </div>
 
-                    {/* AI Insights */}
-                    <div className="glass border border-slate-800 rounded-3xl p-7">
-                      <div className="font-semibold flex items-center gap-2 mb-4"><span>AI Insights</span> <span className="px-2 py-px bg-purple-500/20 text-purple-400 rounded text-xs">BETA</span></div>
-                      <div className="space-y-3 text-sm">
-                        <div className="p-3 rounded-2xl bg-slate-900/60">• <span className="font-medium">Maize Meal</span> forecast: +19% demand next week</div>
-                        <div className="p-3 rounded-2xl bg-slate-900/60">• Reorder suggestion: 120 units Baking Powder</div>
-                        <div className="p-3 rounded-2xl bg-slate-900/60">• Best margin: Cooking Oil (42%)</div>
+                    <div className="space-y-5">
+                      {/* Payment Breakdown */}
+                      <div className="glass border border-slate-800 rounded-3xl p-7">
+                        <div className="font-semibold mb-4">Payment Mix</div>
+                        {paymentBreakdown.length === 0 ? (
+                          <div className="text-sm text-slate-400 py-10 text-center">No sales yet.</div>
+                        ) : (
+                          <>
+                            <div className="h-64">
+                              <ResponsiveContainer>
+                                <PieChart>
+                                  <Pie data={paymentBreakdown} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={58} outerRadius={95}>
+                                    {paymentBreakdown.map(p => <Cell key={p.name} fill={PAYMENT_COLORS[p.name]} />)}
+                                  </Pie>
+                                  <Tooltip formatter={(v) => `$${Number(v).toFixed(2)}`} />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <div className="grid grid-cols-2 text-xs gap-x-6 gap-y-1 pt-1">
+                              {paymentBreakdown.map(p => <div key={p.name} className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded" style={{ background: PAYMENT_COLORS[p.name] }} />{p.name}</div>)}
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Insights computed from real data */}
+                      <div className="glass border border-slate-800 rounded-3xl p-7">
+                        <div className="font-semibold mb-4">Insights</div>
+                        <div className="space-y-3 text-sm">
+                          {topSelling.length > 0
+                            ? <div className="p-3 rounded-2xl bg-slate-900/60">• Best seller: <span className="font-medium">{topSelling[0].name}</span> ({topSelling[0].qty} sold)</div>
+                            : <div className="p-3 rounded-2xl bg-slate-900/60 text-slate-400">• Insights appear once you have made sales.</div>}
+                          {lowStockItems.length > 0 && <div className="p-3 rounded-2xl bg-slate-900/60">• {lowStockItems.length} product{lowStockItems.length === 1 ? ' is' : 's are'} at or below the reorder level</div>}
+                          {canSeeDebtors && totalOwed > 0 && <div className="p-3 rounded-2xl bg-slate-900/60">• Customers owe <span className="font-medium">${totalOwed.toFixed(2)}</span> in total</div>}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Low Stock Alerts */}
                 {lowStockItems.length > 0 && (
@@ -893,9 +927,9 @@ function ZIMKioskApp() {
                     <div className="font-semibold flex items-center gap-2 text-orange-400 mb-3"><AlertTriangle size={19} /> Low Stock Alerts</div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       {lowStockItems.map(p => (
-                        <div key={p.id} onClick={() => { setActiveTab('inventory'); }} className="cursor-pointer px-4 py-3 bg-orange-950/60 rounded-2xl hover:bg-orange-950 flex justify-between items-center">
+                        <div key={p.id} onClick={() => goTo('inventory')} className={`${canAccessTab(role, 'inventory') ? 'cursor-pointer hover:bg-orange-950' : ''} px-4 py-3 bg-orange-950/60 rounded-2xl flex justify-between items-center`}>
                           <div><div className="font-medium">{p.name}</div><div className="text-xs text-orange-400/80">{p.stock} / {p.reorderLevel}</div></div>
-                          <button onClick={(e) => { e.stopPropagation(); setActiveTab('inventory'); }} className="text-xs bg-orange-600 px-3 py-1 rounded">RESTOCK</button>
+                          {canEditInventory && <button onClick={(e) => { e.stopPropagation(); goTo('inventory'); }} className="text-xs bg-orange-600 px-3 py-1 rounded">RESTOCK</button>}
                         </div>
                       ))}
                     </div>
@@ -1001,14 +1035,10 @@ function ZIMKioskApp() {
             {activeTab === 'inventory' && (
               <div>
                 <div className="flex justify-between mb-7 items-center">
-                  <div><div className="text-4xl font-semibold tracking-tight">Inventory Management</div><div className="text-sm text-slate-400 mt-1">Stock • Pricing • Suppliers • Barcode</div></div>
+                  <div><div className="text-4xl font-semibold tracking-tight">Inventory Management</div><div className="text-sm text-slate-400 mt-1">Stock • Pricing • Suppliers • Barcode{!canEditInventory && ' • View only'}</div></div>
                   <div className="flex gap-3">
-                    <button onClick={() => setShowAddProduct(true)} className="px-5 py-2.5 bg-white text-black font-medium rounded-2xl flex gap-2 items-center"><Plus size={18}/> Add Product</button>
-                    <button onClick={() => {
-                      const csv = 'name,barcode,sku,sellingPrice,stock\n' + products.map(p => `${p.name},${p.barcode},${p.sku},${p.sellingPrice},${p.stock}`).join('\n');
-                      const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
-                      const a=document.createElement('a'); a.href=url; a.download='zimkiosk_inventory.csv'; a.click();
-                    }} className="px-5 py-2.5 bg-slate-800 border border-slate-700 rounded-2xl flex gap-2"><Download size={17} /> Export CSV</button>
+                    {canEditInventory && <button onClick={openAddProduct} className="px-5 py-2.5 bg-white text-black font-medium rounded-2xl flex gap-2 items-center"><Plus size={18}/> Add Product</button>}
+                    <button onClick={exportInventoryCSV} className="px-5 py-2.5 bg-slate-800 border border-slate-700 rounded-2xl flex gap-2"><Download size={17} /> Export CSV</button>
                   </div>
                 </div>
 
@@ -1018,15 +1048,21 @@ function ZIMKioskApp() {
                       <th className="pl-8 py-4">Product</th><th>SKU / Barcode</th><th>Price (USD)</th><th>Stock</th><th>Reorder</th><th>Category</th><th></th>
                     </tr></thead>
                     <tbody>
+                      {products.length === 0 && (
+                        <tr><td colSpan={7} className="text-center py-12 text-slate-400">No products yet.{canEditInventory ? ' Click "Add Product" to add your first one.' : ''}</td></tr>
+                      )}
                       {products.map(product => (
                         <tr key={product.id} className="border-b border-slate-800 hover:bg-slate-950 group">
                           <td className="pl-8 py-5 font-medium">{product.name}</td>
                           <td className="text-xs text-slate-400 tabular-nums">{product.sku}<br/>{product.barcode}</td>
-                          <td className="font-medium tabular-nums">${product.sellingPrice}</td>
+                          <td className="font-medium tabular-nums">${product.sellingPrice.toFixed(2)}</td>
                           <td><span className={`font-semibold ${product.stock <= product.reorderLevel ? 'text-orange-400' : ''}`}>{product.stock}</span></td>
                           <td className="text-sm text-slate-400">{product.reorderLevel}</td>
                           <td><span className="px-3 py-px text-xs bg-slate-800 rounded-full">{product.category}</span></td>
-                          <td className="pr-8 text-right"><button onClick={() => editProduct(product)} className="text-sky-400 text-xs">EDIT</button> <button onClick={() => deleteProduct(product.id)} className="ml-3 text-red-400 text-xs">DEL</button></td>
+                          <td className="pr-8 text-right">
+                            {canEditInventory && <button onClick={() => editProduct(product)} className="text-sky-400 text-xs">EDIT</button>}
+                            {canDeleteProducts && <button onClick={() => deleteProduct(product.id)} className="ml-3 text-red-400 text-xs">DEL</button>}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1039,18 +1075,14 @@ function ZIMKioskApp() {
             {activeTab === 'debtors' && (
               <div>
                 <div className="flex justify-between mb-6">
-                  <div><div className="font-semibold text-4xl tracking-tight">Debtors &amp; Credit</div><div>Track receivables and send reminders via WhatsApp</div></div>
-                  <button onClick={() => {
-                    const name = prompt('Debtor full name?') || 'New Debtor';
-                    const phone = prompt('Phone number (+263)') || '+263 77 000 0000';
-                    const newD: Debtor = { id: 'deb'+Date.now(), name, phone, address: 'Harare', nationalId: 'N/A', totalOwed: 0, lastPayment: format(new Date(), 'yyyy-MM-dd'), notes: '' };
-                    setDebtors(prev => [...prev, newD]);
-                    toast.success('Debtor added');
-                  }} className="px-6 py-2.5 flex items-center bg-white text-black font-medium rounded-2xl gap-2"><Plus /> Add Debtor</button>
+                  <div><div className="font-semibold text-4xl tracking-tight">Debtors &amp; Credit</div><div className="text-slate-400 mt-1">Track receivables (USD) and send reminders via WhatsApp</div></div>
+                  {canManageDebtors && <button onClick={() => setShowAddDebtor(true)} className="px-6 py-2.5 flex items-center bg-white text-black font-medium rounded-2xl gap-2"><Plus /> Add Debtor</button>}
                 </div>
 
+                {branchDebtors.length === 0 && <div className="glass rounded-3xl p-12 text-center text-slate-400 border border-slate-800">No debtors yet. Credit sales from the POS add customers here automatically.</div>}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {debtors.map(debtor => (
+                  {branchDebtors.map(debtor => (
                     <div key={debtor.id} className="glass rounded-3xl p-7 border border-slate-800">
                       <div className="flex justify-between items-start">
                         <div>
@@ -1058,13 +1090,15 @@ function ZIMKioskApp() {
                           <div className="text-sm text-sky-400">{debtor.phone}</div>
                         </div>
                         <div className="text-right">
-                          <div className="font-mono text-3xl font-semibold tracking-tight text-orange-400"> {currencySymbol}{debtor.totalOwed.toFixed(2)}</div>
+                          <div className="font-mono text-3xl font-semibold tracking-tight text-orange-400">${debtor.totalOwed.toFixed(2)}</div>
                           <div className="text-xs text-slate-400">LAST PAID: {debtor.lastPayment}</div>
                         </div>
                       </div>
-                      <div className="mt-4 text-xs bg-slate-900 p-3 rounded-2xl">{debtor.notes}</div>
+                      {debtor.notes && <div className="mt-4 text-xs bg-slate-900 p-3 rounded-2xl">{debtor.notes}</div>}
                       <div className="mt-4 flex gap-3">
-                        <button onClick={() => recordDebtorPayment(debtor.id, 25)} className="flex-1 text-sm py-2.5 bg-emerald-600 rounded-2xl">Pay $25</button>
+                        {canManageDebtors && (
+                          <button disabled={debtor.totalOwed <= 0} onClick={() => { setPayingDebtor(debtor); setPayAmount(debtor.totalOwed.toFixed(2)); }} className="flex-1 text-sm py-2.5 bg-emerald-600 disabled:bg-slate-700 rounded-2xl">Record Payment</button>
+                        )}
                         <button onClick={() => openWhatsApp(debtor)} className="flex-1 flex justify-center items-center gap-2 border border-sky-700 hover:bg-sky-900/60 text-sky-400 text-sm py-2.5 rounded-2xl"><Phone size={16} /> WhatsApp Reminder</button>
                       </div>
                     </div>
@@ -1077,30 +1111,30 @@ function ZIMKioskApp() {
             {activeTab === 'reports' && (
               <div>
                 <div className="flex justify-between mb-8">
-                  <div className="text-4xl font-semibold tracking-tight">Reports &amp; Business Intelligence</div>
+                  <div className="text-4xl font-semibold tracking-tight">Reports</div>
                   <button onClick={exportSalesCSV} className="px-5 py-2.5 flex gap-2 items-center bg-white text-black font-medium rounded-2xl"><Download /> Export CSV</button>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="glass p-8 rounded-3xl"><div className="font-medium mb-5">Sales Performance</div>
-                    <div className="h-80"><ResponsiveContainer><BarChart data={salesTrendData}><CartesianGrid stroke="#334155" /><XAxis dataKey="day" /><YAxis /><Tooltip /><Bar dataKey="revenue" fill="#38bdf8" radius={4} /></BarChart></ResponsiveContainer></div>
+                  <div className="glass p-8 rounded-3xl"><div className="font-medium mb-5">Sales, last 7 days (USD)</div>
+                    <div className="h-80"><ResponsiveContainer><BarChart data={salesTrendData}><CartesianGrid stroke="#334155" /><XAxis dataKey="day" /><YAxis /><Tooltip formatter={(v) => `$${Number(v).toFixed(2)}`} /><Bar dataKey="revenue" fill="#38bdf8" radius={4} /></BarChart></ResponsiveContainer></div>
                   </div>
                   <div className="glass p-8 rounded-3xl">
-                    <div className="font-medium mb-5">Top Moving Products</div>
+                    <div className="font-medium mb-5">Top Selling Products</div>
                     <div className="space-y-4 mt-3">
-                      {topProducts.map((p, i) => <div key={i} className="flex justify-between items-center text-sm border-b border-slate-800 pb-3"><div>{p.name}</div><div className="font-semibold tabular-nums">{p.stock} units</div></div>)}
+                      {topSelling.length === 0 && <div className="text-sm text-slate-400">No sales yet.</div>}
+                      {topSelling.map(p => <div key={p.name} className="flex justify-between items-center text-sm border-b border-slate-800 pb-3"><div>{p.name}</div><div className="font-semibold tabular-nums">{p.qty} sold</div></div>)}
                     </div>
-                    <div className="mt-6 p-4 text-xs bg-purple-950/30 rounded-2xl text-purple-300">AI: Maize Meal expected to sell out by 25 Jan. Auto-reorder enabled.</div>
                   </div>
                 </div>
 
                 <div className="mt-8 glass p-7 rounded-3xl">
                   <div className="font-semibold mb-5">Recent Transactions</div>
                   <div className="max-h-[280px] overflow-auto text-sm">
-                    {sales.length > 0 ? sales.slice(0, 8).map(sale => (
+                    {branchSales.length > 0 ? branchSales.slice(0, 20).map(sale => (
                       <div key={sale.id} className="flex justify-between border-b border-slate-800 py-3 px-1">
                         <div>{format(new Date(sale.date), 'dd MMM HH:mm')} • {sale.cashier}</div>
-                        <div className="font-medium tabular-nums">{currencySymbol}{sale.total.toFixed(2)} • {sale.paymentMethod}</div>
+                        <div className="font-medium tabular-nums">{symbolFor(sale.currency)}{sale.total.toFixed(2)} • {sale.paymentMethod}</div>
                       </div>
                     )) : <div className="text-center py-9 text-slate-400">No sales recorded yet. Start selling in the POS module.</div>}
                   </div>
@@ -1111,18 +1145,53 @@ function ZIMKioskApp() {
             {/* STAFF MANAGEMENT */}
             {activeTab === 'staff' && (
               <div>
-                <div className="text-4xl font-semibold tracking-tight mb-8">Staff &amp; Cashier Performance</div>
+                <div className="text-4xl font-semibold tracking-tight mb-2">Staff</div>
+                <div className="text-slate-400 mb-8">{canManageStaff ? 'Activate new accounts and set each person\'s role and branch.' : 'Staff in your branch (view only).'}</div>
+                {staff.filter(m => !m.active).length > 0 && (
+                  <div className="mb-6 text-sm text-orange-300 bg-orange-950/40 border border-orange-900/50 rounded-2xl px-5 py-3">
+                    {staff.filter(m => !m.active).length} account(s) are waiting to be activated.
+                  </div>
+                )}
                 <div className="grid md:grid-cols-2 gap-6">
-                  {[
-                    { name: "Tafadzwa M.", role: "Cashier", sales: 1420, txns: 87, shift: "08:00 - 16:00" },
-                    { name: "Rumbidzai K.", role: "Branch Manager", sales: 2940, txns: 113, shift: "09:00 - 17:00" }
-                  ].map((staff, i) => (
-                    <div key={i} className="glass p-7 rounded-3xl">
-                      <div className="font-semibold text-2xl mb-1">{staff.name}</div>
-                      <div className="text-sm text-sky-400 mb-6">{staff.role} • {staff.shift}</div>
-                      <div className="flex gap-9 text-sm"><div><div className="font-mono text-3xl font-semibold">${staff.sales}</div><div>Sales Today</div></div><div><div className="font-mono text-3xl font-semibold">{staff.txns}</div><div>Transactions</div></div></div>
-                    </div>
-                  ))}
+                  {staff.map(member => {
+                    const mine = branchSales.filter(s => s.cashierId === member.id);
+                    const todayMine = mine.filter(s => format(new Date(s.date), 'yyyy-MM-dd') === todayKey);
+                    const isSelf = member.id === profile.id;
+                    return (
+                      <div key={member.id} className="glass p-7 rounded-3xl" data-testid={`staff-${member.email}`}>
+                        <div className="flex justify-between items-start mb-1">
+                          <div>
+                            <div className="font-semibold text-2xl">{member.fullName}{isSelf && <span className="ml-2 text-xs text-slate-400">(you)</span>}</div>
+                            <div className="text-xs text-slate-400">{member.email}</div>
+                          </div>
+                          <span className={`text-[10px] px-2.5 py-1 rounded-full ${member.active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-orange-500/10 text-orange-400'}`}>{member.active ? 'ACTIVE' : 'PENDING'}</span>
+                        </div>
+                        <div className="text-sm text-sky-400 mt-2 mb-5">{ROLE_LABELS[member.role]} • {branches.find(b => b.id === member.branchId)?.name ?? 'No branch'}</div>
+                        <div className="flex gap-9 text-sm mb-1">
+                          <div><div className="font-mono text-3xl font-semibold">${todayMine.reduce((a, s) => a + s.totalUsd, 0).toFixed(2)}</div><div>Sales Today</div></div>
+                          <div><div className="font-mono text-3xl font-semibold">{mine.length}</div><div>Transactions</div></div>
+                        </div>
+                        {canManageStaff && (
+                          <div className="mt-5 pt-5 border-t border-slate-800 grid grid-cols-2 gap-3 text-sm">
+                            <label className="text-xs text-slate-400">Role
+                              <select disabled={isSelf} value={member.role} onChange={e => changeStaff(member.id, { role: e.target.value as Role })} className="block w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 disabled:opacity-50">
+                                {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                              </select>
+                            </label>
+                            <label className="text-xs text-slate-400">Branch
+                              <select value={member.branchId ?? ''} onChange={e => changeStaff(member.id, { branchId: e.target.value || null })} className="block w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200">
+                                <option value="">No branch</option>
+                                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                              </select>
+                            </label>
+                            <button disabled={isSelf} onClick={() => changeStaff(member.id, { active: !member.active })} className={`col-span-2 py-2.5 rounded-xl font-medium disabled:opacity-40 ${member.active ? 'bg-slate-800 text-slate-200' : 'bg-emerald-600 text-white'}`}>
+                              {member.active ? 'Deactivate account' : 'Activate account'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1130,29 +1199,34 @@ function ZIMKioskApp() {
             {/* SETTINGS */}
             {activeTab === 'settings' && (
               <div className="max-w-3xl">
-                <div className="text-4xl tracking-tight font-semibold mb-9">System Settings</div>
-                
+                <div className="text-4xl tracking-tight font-semibold mb-9">Settings</div>
+
                 <div className="glass p-9 rounded-3xl mb-7">
-                  <div className="font-semibold mb-4">Exchange Rates (Admin Only)</div>
-                  <div className="grid grid-cols-2 gap-5">
-                    <div><label className="text-xs text-slate-400">ZiG per USD</label><input type="number" value={exchangeRates.ZiG} onChange={e => { const v = parseFloat(e.target.value); if (v > 0) setExchangeRates({...exchangeRates, ZiG: v}); }} className="block w-full mt-1 py-3 bg-slate-900 rounded-2xl px-5 text-xl border border-slate-700" /></div>
-                    <div><label className="text-xs text-slate-400">ZAR per USD</label><input type="number" value={exchangeRates.ZAR} onChange={e => { const v = parseFloat(e.target.value); if (v > 0) setExchangeRates({...exchangeRates, ZAR: v}); }} className="block w-full mt-1 py-3 bg-slate-900 rounded-2xl px-5 text-xl border border-slate-700" /></div>
+                  <div className="font-semibold mb-4">Your Account</div>
+                  <div className="grid grid-cols-2 gap-y-3 text-sm">
+                    <div className="text-slate-400">Name</div><div>{profile.fullName}</div>
+                    <div className="text-slate-400">Email</div><div>{profile.email}</div>
+                    <div className="text-slate-400">Role</div><div>{ROLE_LABELS[role]}</div>
+                    <div className="text-slate-400">Branch</div><div>{branches.find(b => b.id === profile.branchId)?.name ?? 'Not assigned'}</div>
                   </div>
-                  <div className="text-xs mt-3 text-emerald-400">Rates updated live. All prices automatically recalculated.</div>
                 </div>
 
-                <div className="glass p-8 rounded-3xl">
-                  <div className="font-semibold mb-4">System Features</div>
-                  <div className="text-sm grid grid-cols-2 gap-y-2.5 text-slate-400">
-                    <div>✓ Offline-first with IndexedDB sync</div>
-                    <div>✓ EcoCash integration ready</div>
-                    <div>✓ Barcode &amp; Camera Scanner</div>
-                    <div>✓ Multi-branch management</div>
-                    <div>✓ AI Sales Forecasting</div>
-                    <div>✓ WhatsApp debtor reminders</div>
-                    <div>✓ PWA installable on Android</div>
-                    <div>✓ Real-time WebSocket ready</div>
+                <div className="glass p-9 rounded-3xl">
+                  <div className="font-semibold mb-1">Exchange Rates</div>
+                  <div className="text-xs text-slate-400 mb-4">{canEditRates ? 'Units of each currency per 1 USD. A currency is available at the till once its rate is set.' : 'Set by an administrator.'}</div>
+                  <div className="grid grid-cols-2 gap-5">
+                    {(['ZiG', 'ZAR'] as const).map(code => (
+                      <div key={code}>
+                        <label className="text-xs text-slate-400" htmlFor={`rate-${code}`}>{code} per USD</label>
+                        {canEditRates ? (
+                          <input id={`rate-${code}`} type="number" min="0" step="any" value={rateDraft[code]} onChange={e => setRateDraft({ ...rateDraft, [code]: e.target.value })} placeholder="Not set" className="block w-full mt-1 py-3 bg-slate-900 rounded-2xl px-5 text-xl border border-slate-700" />
+                        ) : (
+                          <div className="mt-1 py-3 px-5 text-xl bg-slate-900 rounded-2xl border border-slate-800">{exchangeRates[code] > 0 ? exchangeRates[code] : 'Not set'}</div>
+                        )}
+                      </div>
+                    ))}
                   </div>
+                  {canEditRates && <button disabled={submitting} onClick={saveRates} className="mt-6 px-6 py-3 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 rounded-2xl font-medium">Save exchange rates</button>}
                 </div>
               </div>
             )}
@@ -1171,17 +1245,22 @@ function ZIMKioskApp() {
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-7">
-                {paymentMethods.map(method => (
+                {api.PAYMENT_METHODS.map(method => (
                   <button key={method} onClick={() => setPaymentMethod(method)} className={`py-4 text-sm font-medium rounded-2xl transition-all border ${paymentMethod === method ? 'border-sky-500 bg-sky-600/20' : 'border-slate-700 hover:bg-slate-800'}`}>
                     {method}
                   </button>
                 ))}
               </div>
 
-              {paymentMethod === 'EcoCash' && (
-                <div className="mb-4">
-                  <input type="tel" placeholder="+263 77 XXX XXXX" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="bg-slate-950 w-full border border-slate-700 px-6 py-4 rounded-2xl text-lg" />
-                  <div className="text-xs mt-2 text-center text-slate-400">Customer will receive SMS reference</div>
+              {(paymentMethod === 'EcoCash' || paymentMethod === 'Debt') && (
+                <div className="mb-4 space-y-3">
+                  <input type="tel" aria-label="Customer phone" placeholder="Customer phone +263 77 XXX XXXX" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="bg-slate-950 w-full border border-slate-700 px-6 py-4 rounded-2xl text-lg" />
+                  {paymentMethod === 'Debt' && (
+                    <>
+                      <input type="text" aria-label="Customer name" placeholder="Customer name (for new debtors)" value={customerName} onChange={e => setCustomerName(e.target.value)} className="bg-slate-950 w-full border border-slate-700 px-6 py-4 rounded-2xl text-lg" />
+                      <div className="text-xs text-center text-slate-400">The amount is added to this customer's debt (tracked in USD).</div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1195,7 +1274,7 @@ function ZIMKioskApp() {
                 </div>
               )}
 
-              <button onClick={completeSale} className="touch-btn w-full py-4 bg-emerald-600 font-semibold text-lg rounded-2xl">CONFIRM PAYMENT</button>
+              <button disabled={submitting} onClick={completeSale} className="touch-btn w-full py-4 bg-emerald-600 disabled:bg-slate-700 font-semibold text-lg rounded-2xl">{submitting ? 'PROCESSING…' : 'CONFIRM PAYMENT'}</button>
             </motion.div>
           </div>
         )}
@@ -1220,7 +1299,7 @@ function ZIMKioskApp() {
       {/* RECEIPT MODAL */}
       <AnimatePresence>
         {showReceipt && lastSale && (
-          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[90] p-8" onClick={() => setShowReceipt(false)}>
+          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[90] p-8" onClick={closeReceipt}>
       <div onClick={e => e.stopPropagation()} className="receipt w-full max-w-[380px] bg-white text-black p-9 rounded-3xl shadow-2xl">
         {receiptSuccess && (
           <div className="mb-6 text-center bg-emerald-100 text-emerald-700 py-2.5 px-5 rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold">
@@ -1230,7 +1309,7 @@ function ZIMKioskApp() {
 
         <div className="text-center">
           <div className="font-black text-3xl tracking-[-1.5px]">ZIM KIOSK</div>
-          <div className="text-sm mt-0.5 mb-4 text-gray-600">Harare, Zimbabwe • VAT: 12345678</div>
+          <div className="text-sm mt-0.5 mb-4 text-gray-600">{branches.find(b => b.id === lastSale.branchId)?.location}</div>
         </div>
 
         <div className="text-xs mb-5 border-b pb-4 border-gray-300">Receipt #{lastSale.id} • {format(new Date(lastSale.date), 'dd MMM yyyy HH:mm')}</div>
@@ -1252,34 +1331,109 @@ function ZIMKioskApp() {
               )}
               <div className="text-center mt-4 text-xs tracking-widest">PAYMENT: {lastSale.paymentMethod.toUpperCase()}</div>
 
-              <div className="mt-7 text-center text-[10px] text-gray-500">Thank you for shopping!<br />EcoCash accepted • 24hr support: 0800 123 456</div>
+              <div className="mt-7 text-center text-[10px] text-gray-500">Thank you for shopping at ZIM KIOSK!</div>
 
               <div className="flex gap-3 mt-7">
                 <button onClick={printReceipt} className="flex-1 py-3.5 bg-black text-white font-semibold rounded-2xl text-sm">PRINT THERMAL RECEIPT</button>
-                <button onClick={() => setShowReceipt(false)} className="flex-1 py-3.5 border text-sm font-semibold border-gray-300 rounded-2xl">CLOSE</button>
+                <button onClick={closeReceipt} className="flex-1 py-3.5 border text-sm font-semibold border-gray-300 rounded-2xl">CLOSE</button>
               </div>
             </div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* Add Product Modal */}
+      {/* Add / Edit Product Modal */}
       <AnimatePresence>
         {showAddProduct && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[95]" onClick={() => setShowAddProduct(false)}>
-            <div onClick={e => e.stopPropagation()} className="glass bg-slate-900 border border-slate-700 w-full max-w-lg p-8 rounded-3xl">
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[95]" onClick={() => { setShowAddProduct(false); setEditingProduct(null); }}>
+            <div onClick={e => e.stopPropagation()} className="glass bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl p-8 max-h-[92vh] overflow-auto">
               <div className="font-semibold text-2xl mb-5">{editingProduct ? 'Edit Product' : 'Add New Product'}</div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <input value={newProduct.name} placeholder="Product Name" onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl col-span-2" />
-                <input value={newProduct.barcode} placeholder="Barcode" onChange={e => setNewProduct({...newProduct, barcode: e.target.value})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl" />
-                <input value={newProduct.sku} placeholder="SKU" onChange={e => setNewProduct({...newProduct, sku: e.target.value})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl" />
-                <input type="number" value={newProduct.sellingPrice} placeholder="Selling Price USD" onChange={e => setNewProduct({...newProduct, sellingPrice: parseFloat(e.target.value) || 0})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl" />
-                <input type="number" value={newProduct.stock} placeholder="Stock Qty" onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})} className="bg-slate-950 px-5 py-3 border border-slate-800 rounded-2xl" />
+
+              <div className="grid grid-cols-2 gap-4 text-xs text-slate-400">
+                <label className="col-span-2">Product name
+                  <input value={newProduct.name} onChange={e => setNewProduct({ ...newProduct, name: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label>Barcode
+                  <input value={newProduct.barcode} placeholder="Auto" onChange={e => setNewProduct({ ...newProduct, barcode: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label>SKU
+                  <input value={newProduct.sku} placeholder="Auto" onChange={e => setNewProduct({ ...newProduct, sku: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label>Buying price (USD)
+                  <input type="number" min="0" step="any" value={newProduct.buyingPrice || ''} onChange={e => setNewProduct({ ...newProduct, buyingPrice: parseFloat(e.target.value) || 0 })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label>Selling price (USD)
+                  <input type="number" min="0" step="any" value={newProduct.sellingPrice || ''} onChange={e => setNewProduct({ ...newProduct, sellingPrice: parseFloat(e.target.value) || 0 })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label>Stock quantity
+                  <input type="number" min="0" step="1" value={newProduct.stock} onChange={e => setNewProduct({ ...newProduct, stock: parseInt(e.target.value) || 0 })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label>Reorder level
+                  <input type="number" min="0" step="1" value={newProduct.reorderLevel} onChange={e => setNewProduct({ ...newProduct, reorderLevel: parseInt(e.target.value) || 0 })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label>Category
+                  <input value={newProduct.category} placeholder="General" onChange={e => setNewProduct({ ...newProduct, category: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label>Supplier
+                  <input value={newProduct.supplier} onChange={e => setNewProduct({ ...newProduct, supplier: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label className="col-span-2">Expiry date (optional)
+                  <input type="date" value={newProduct.expiryDate} onChange={e => setNewProduct({ ...newProduct, expiryDate: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
               </div>
               <div className="flex gap-3 mt-6">
-                <button onClick={() => { setShowAddProduct(false); setEditingProduct(null); }} className="flex-1 py-3 border rounded-2xl">Cancel</button>
-                <button onClick={saveProduct} className="flex-1 py-3 bg-sky-600 rounded-2xl font-medium">Save Product</button>
+                <button onClick={() => { setShowAddProduct(false); setEditingProduct(null); }} className="flex-1 py-3 border border-slate-700 rounded-2xl">Cancel</button>
+                <button disabled={submitting} onClick={saveProduct} className="flex-1 py-3 bg-sky-600 disabled:bg-slate-700 rounded-2xl font-medium">{submitting ? 'Saving…' : 'Save Product'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Debtor Modal */}
+      <AnimatePresence>
+        {showAddDebtor && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[95]" onClick={() => setShowAddDebtor(false)}>
+            <div onClick={e => e.stopPropagation()} className="glass bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl p-8">
+              <div className="font-semibold text-2xl mb-5">Add Debtor</div>
+              <div className="space-y-4 text-xs text-slate-400">
+                <label className="block">Full name
+                  <input value={debtorForm.name} onChange={e => setDebtorForm({ ...debtorForm, name: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label className="block">Phone number
+                  <input type="tel" value={debtorForm.phone} placeholder="+263 77 000 0000" onChange={e => setDebtorForm({ ...debtorForm, phone: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label className="block">Address (optional)
+                  <input value={debtorForm.address} onChange={e => setDebtorForm({ ...debtorForm, address: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label className="block">National ID (optional)
+                  <input value={debtorForm.nationalId} onChange={e => setDebtorForm({ ...debtorForm, nationalId: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+                <label className="block">Notes (optional)
+                  <input value={debtorForm.notes} onChange={e => setDebtorForm({ ...debtorForm, notes: e.target.value })} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-base text-slate-100" />
+                </label>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setShowAddDebtor(false)} className="flex-1 py-3 border border-slate-700 rounded-2xl">Cancel</button>
+                <button disabled={submitting} onClick={saveDebtor} className="flex-1 py-3 bg-sky-600 disabled:bg-slate-700 rounded-2xl font-medium">{submitting ? 'Saving…' : 'Add Debtor'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Record Debtor Payment Modal */}
+      <AnimatePresence>
+        {payingDebtor && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[95]" onClick={() => setPayingDebtor(null)}>
+            <div onClick={e => e.stopPropagation()} className="glass bg-slate-900 border border-slate-700 w-full max-w-sm rounded-3xl p-8">
+              <div className="font-semibold text-2xl mb-1">Record Payment</div>
+              <div className="text-sm text-slate-400 mb-5">{payingDebtor.name} owes ${payingDebtor.totalOwed.toFixed(2)}</div>
+              <label className="text-xs text-slate-400" htmlFor="pay-amount">Amount received (USD)</label>
+              <input id="pay-amount" type="number" min="0" step="any" value={payAmount} onChange={e => setPayAmount(e.target.value)} className="block w-full mt-1 bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-2xl text-slate-100" />
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setPayingDebtor(null)} className="flex-1 py-3 border border-slate-700 rounded-2xl">Cancel</button>
+                <button disabled={submitting} onClick={submitDebtorPayment} className="flex-1 py-3 bg-emerald-600 disabled:bg-slate-700 rounded-2xl font-medium">{submitting ? 'Saving…' : 'Record'}</button>
               </div>
             </div>
           </div>
@@ -1289,13 +1443,25 @@ function ZIMKioskApp() {
   );
 }
 
-// Router Wrapper
+function AppGate() {
+  const { profile, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400" role="status">
+        <Loader2 className="animate-spin text-sky-400" size={36} />
+      </div>
+    );
+  }
+  if (!profile) return <LoginScreen />;
+  // key = user id, so switching accounts always starts from a clean state
+  return <ZIMKioskApp key={profile.id} profile={profile} />;
+}
+
 export default function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="*" element={<ZIMKioskApp />} />
-      </Routes>
-    </Router>
+    <AuthProvider>
+      <AppGate />
+    </AuthProvider>
   );
 }
