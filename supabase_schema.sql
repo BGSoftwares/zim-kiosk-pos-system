@@ -169,14 +169,5 @@ insert into branches (name, location) values
   ('Mutare Depot', 'Sakubva')
 on conflict do nothing;
 
--- Insert sample products
-insert into products (name, barcode, sku, buying_price, selling_price, wholesale_price, stock, reorder_level, category, supplier, expiry_date) values
-  ('Maize Meal 10kg', '6001234567890', 'MM-10KG', 7.50, 9.99, 8.75, 142, 30, 'Staples', 'National Foods', '2026-08-15'),
-  ('Sugar 2kg', '6009876543210', 'SG-2KG', 2.10, 2.85, 2.45, 89, 25, 'Staples', 'Tongaat Hulett', null),
-  ('Cooking Oil 5L', '6002345678901', 'CO-5L', 6.20, 8.49, 7.35, 56, 20, 'Cooking', 'Unilever', null),
-  ('Rice 5kg', '6003456789012', 'RC-5KG', 4.80, 6.25, 5.50, 67, 15, 'Staples', 'Asian Foods', null),
-  ('Bread Loaf', '6004567890123', 'BRD-01', 1.05, 1.45, 1.25, 124, 40, 'Bakery', 'Lobels', null),
-  ('Milk 1L', '6005678901234', 'MLK-1L', 1.15, 1.59, 1.40, 78, 35, 'Dairy', 'Dairibord', '2026-02-28'),
-  ('Coca Cola 2L', '6006789012345', 'CC-2L', 1.35, 1.89, 1.60, 95, 30, 'Beverages', 'Coca-Cola', null),
-  ('Baking Powder 500g', '6007890123456', 'BP-500G', 1.60, 2.15, 1.85, 32, 12, 'Baking', 'Royal', null)
-on conflict (barcode) do nothing;
+-- NOTE: run supabase_migration_roles.sql next (profiles, roles, row-level security).
+-- No sample products are inserted; add your real stock from the Inventory page.
