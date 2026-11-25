@@ -403,3 +403,59 @@ $$;
 
 revoke all on function record_debtor_payment(uuid, numeric, text) from public, anon;
 grant execute on function record_debtor_payment(uuid, numeric, text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 8. Receive stock (scan-in): add delivered quantities in ONE transaction and log them.
+--    Roles: admin, manager, storekeeper.
+--    p_items = [{"product_id": "<uuid>", "quantity": 12}, ...]
+-- ---------------------------------------------------------------------------
+create or replace function receive_stock(p_items jsonb, p_note text default null)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_role  text := auth_role();
+  v_item  jsonb;
+  v_qty   integer;
+  v_pid   uuid;
+  v_units integer := 0;
+begin
+  if v_role is null or v_role not in ('admin', 'manager', 'storekeeper') then
+    raise exception 'Your role cannot receive stock';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'Nothing to receive';
+  end if;
+
+  -- stable lock order avoids deadlocks between two people receiving at once
+  for v_item in
+    select value from jsonb_array_elements(p_items) order by value->>'product_id'
+  loop
+    v_pid := (v_item->>'product_id')::uuid;
+    v_qty := (v_item->>'quantity')::integer;
+
+    if v_qty is null or v_qty < 1 or v_qty > 100000 then
+      raise exception 'Quantity must be between 1 and 100000';
+    end if;
+
+    perform 1 from products where id = v_pid for update;
+    if not found then
+      raise exception 'Product not found';
+    end if;
+
+    update products set stock = stock + v_qty, updated_at = now() where id = v_pid;
+
+    insert into stock_transactions (product_id, transaction_type, quantity_change, notes, created_by)
+    values (v_pid, 'purchase', v_qty, coalesce(nullif(trim(p_note), ''), 'Stock received (scan)'), auth.uid());
+
+    v_units := v_units + v_qty;
+  end loop;
+
+  return v_units;
+end;
+$$;
+
+revoke all on function receive_stock(jsonb, text) from public, anon;
+grant execute on function receive_stock(jsonb, text) to authenticated;

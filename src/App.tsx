@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Home, ShoppingCart, Package, Users, TrendingUp, Settings,
   LogOut, ScanLine, Plus, Minus, Trash2, Download,
-  Phone, AlertTriangle, Loader2, RefreshCw
+  Phone, AlertTriangle, Loader2, RefreshCw, X, PackagePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
-import { Html5Qrcode } from 'html5-qrcode';
 import { toast } from 'sonner';
 import { format, subDays } from 'date-fns';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginScreen from './LoginScreen';
+import BarcodeScanner from './components/BarcodeScanner';
+import ReceiveStock from './components/ReceiveStock';
+import { scanFeedback, type ScanKind } from './lib/scanFeedback';
+import { useBarcodeWedge } from './lib/useBarcodeWedge';
 import { can, canAccessTab, maxDiscount, ROLES, ROLE_LABELS, TAB_ACCESS, type Role, type Tab } from './lib/roles';
 import * as api from './services/api';
 import type { Branch, CartItem, Currency, Debtor, ExchangeRates, Product, Profile, Sale } from './types';
@@ -46,6 +49,16 @@ const downloadCsv = (filename: string, rows: unknown[][]) => {
   a.click();
   URL.revokeObjectURL(url);
 };
+
+const NAV_ITEMS: { id: Tab; label: string; icon: typeof Home }[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: Home },
+  { id: 'pos', label: 'Smart POS', icon: ShoppingCart },
+  { id: 'inventory', label: 'Inventory', icon: Package },
+  { id: 'debtors', label: 'Debtors', icon: Users },
+  { id: 'reports', label: 'Reports', icon: TrendingUp },
+  { id: 'staff', label: 'Staff', icon: Users },
+  { id: 'settings', label: 'Settings', icon: Settings },
+];
 
 const symbolFor = (currency: string) => (currency === 'USD' ? '$' : currency === 'ZiG' ? 'ZiG' : 'R');
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -97,7 +110,9 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [scannerInstance, setScannerInstance] = useState<Html5Qrcode | null>(null);
+  const [lastScan, setLastScan] = useState<{ kind: ScanKind; text: string } | null>(null);
+  const [showReceive, setShowReceive] = useState(false);
+  const cartRef = useRef<CartItem[]>([]);
   const [newProduct, setNewProduct] = useState(emptyProductForm);
   const [showAddDebtor, setShowAddDebtor] = useState(false);
   const [debtorForm, setDebtorForm] = useState(emptyDebtorForm);
@@ -209,89 +224,72 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
   const cartCount = cart.reduce((sum, i) => sum + i.quantity, 0);
 
   // POS Functions
-  const addToCart = (product: Product) => {
-    if (product.stock <= 0) {
-      toast.error('Out of stock!');
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+
+  // Reads and writes the cart through a ref so several scans in quick succession never act on stale state.
+  const addToCart = (product: Product, opts: { quiet?: boolean } = {}): { kind: ScanKind; text: string } => {
+    const say = (kind: ScanKind, text: string, description?: string) => {
+      if (!opts.quiet) {
+        if (kind === 'ok') toast.success(text, description ? { description } : undefined);
+        else if (kind === 'warn') toast.warning(text);
+        else toast.error(text);
+      }
+      return { kind, text };
+    };
+
+    if (product.stock <= 0) return say('error', `${product.name} is out of stock`);
+
+    const current = cartRef.current;
+    const existing = current.find(item => item.id === product.id);
+    if (existing) {
+      if (existing.quantity >= product.stock) return say('warn', `Only ${product.stock} of ${product.name} in stock`);
+      const next = current.map(item => (item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item));
+      cartRef.current = next;
+      setCart(next);
+      return say('ok', `${product.name} × ${existing.quantity + 1}`);
+    }
+    const next = [...current, { ...product, quantity: 1, discount: 0 }];
+    cartRef.current = next;
+    setCart(next);
+    return say('ok', `${product.name} added to cart`, `${currencySymbol}${convertPrice(product.sellingPrice).toFixed(2)}`);
+  };
+
+  // One entry point for every kind of scan: camera, Bluetooth/USB scanner, or typed barcode.
+  const handleBarcode = (raw: string) => {
+    const code = raw.trim();
+    if (!code) return;
+    const product = products.find(p => p.barcode === code || p.sku.toLowerCase() === code.toLowerCase());
+
+    if (!product) {
+      scanFeedback('error');
+      setLastScan({ kind: 'error', text: `Unknown barcode ${code}` });
+      if (canEditInventory) {
+        toast.error(`Unknown barcode ${code}`, {
+          action: { label: 'Add product', onClick: () => { setShowScanner(false); goTo('inventory'); openAddProduct(code); } },
+        });
+      } else {
+        toast.error(`Barcode ${code} is not in the inventory. Ask a manager to add it.`);
+      }
       return;
     }
-    
-    const existingItem = cart.find(item => item.id === product.id);
-    if (existingItem) {
-      if (existingItem.quantity >= product.stock) {
-        toast.warning(`Only ${product.stock} available`);
-        return;
-      }
-      setCart(prev => prev.map(item =>
-        item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-      ));
-      toast.success(`Added another ${product.name}`);
-    } else {
-      setCart(prev => [...prev, { ...product, quantity: 1, discount: 0 }]);
-      toast.success(`${product.name} added to cart`, { description: `${currencySymbol}${convertPrice(product.sellingPrice).toFixed(2)}` });
-    }
+
+    const result = addToCart(product, { quiet: showScanner });
+    scanFeedback(result.kind);
+    setLastScan(result);
   };
 
-  // Barcode Scanner
-  const startScanner = async () => {
-    setShowScanner(true);
-    
-    try {
-      const html5QrCode = new Html5Qrcode("scanner-container");
-      setScannerInstance(html5QrCode);
+  // Hardware scanners (USB / Bluetooth) work on the POS page without opening the camera.
+  useBarcodeWedge(handleBarcode, activeTab === 'pos' && !showScanner && !showPaymentModal && !showReceipt);
 
-      await html5QrCode.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 280, height: 180 } },
-        (decodedText) => {
-          // Find matching product
-          const matchedProduct = products.find(p => 
-            p.barcode === decodedText || 
-            p.sku === decodedText || 
-            (p.barcode.length >= 6 && decodedText.includes(p.barcode.slice(-6)))
-          );
-          
-          if (matchedProduct) {
-            addToCart(matchedProduct);
-            // Stop scanner automatically
-            stopScanner(html5QrCode);
-            toast.success(`Scanned: ${matchedProduct.name}`, { 
-              description: 'Added to cart',
-              action: { label: "View Cart", onClick: () => setShowScanner(false) }
-            });
-          } else {
-            toast.info(`Unknown barcode: ${decodedText}`, { 
-              description: "Product not found. Add it in Inventory." 
-            });
-          }
-        },
-        () => {
-          // Ignore continuous scan errors
-        }
-      );
-    } catch (err) {
-      toast.error('Camera access failed. Use manual entry.');
-      setScannerInstance(null);
-      setShowScanner(false);
-    }
-  };
-
-  const stopScanner = (instance: Html5Qrcode | null = scannerInstance) => {
-    if (instance) {
-      instance.stop().then(() => {
-        instance.clear();
-      }).catch(() => {});
-      setScannerInstance(null);
-    }
-    setShowScanner(false);
-  };
-
-  const manualBarcodeEntry = (barcode: string) => {
-    const product = products.find(p => p.barcode === barcode || p.sku === barcode);
-    if (product) {
-      addToCart(product);
+  const submitSearch = () => {
+    const term = searchTerm.trim();
+    if (!term) return;
+    const exact = products.some(p => p.barcode === term || p.sku.toLowerCase() === term.toLowerCase());
+    if (exact || /^\d{6,}$/.test(term)) {
+      handleBarcode(term);
       setSearchTerm('');
-    } else {
-      toast.error('Product not found with that barcode');
     }
   };
 
@@ -517,9 +515,9 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
     setShowAddProduct(true);
   };
 
-  const openAddProduct = () => {
+  const openAddProduct = (barcode?: string) => {
     setEditingProduct(null);
-    setNewProduct(emptyProductForm);
+    setNewProduct({ ...emptyProductForm, barcode: barcode ?? '' });
     setShowAddProduct(true);
   };
 
@@ -731,41 +729,41 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
     <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col">
 
       {/* Top Navigation Bar */}
-      <header className="h-16 border-b border-slate-800 bg-slate-900/95 backdrop-blur-lg z-50 flex items-center px-6 sticky top-0">
-        <div className="flex items-center gap-4 flex-1">
-          <div className="flex items-center gap-3">
+      <header className="h-16 border-b border-slate-800 bg-slate-900/95 backdrop-blur-lg z-50 flex items-center px-3 sm:px-6 sticky top-0">
+        <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
+          <div className="flex items-center gap-3 shrink-0">
             <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center">
               <span className="font-black text-white text-xl tracking-tighter">ZK</span>
             </div>
-            <div>
+            <div className="hidden sm:block">
               <div className="font-semibold text-xl tracking-[-0.6px]">ZIM KIOSK</div>
               <div className="text-[10px] text-sky-400 -mt-1">ZIMBABWE SMART POS</div>
             </div>
           </div>
 
           {/* Branch: admins can switch, everyone else is fixed to their own branch */}
-          <div className="ml-6 flex items-center gap-1.5 bg-slate-900 px-3 py-1.5 rounded-2xl border border-slate-800 text-sm">
-            <span className="text-slate-400">Branch:</span>
+          <div className="sm:ml-6 min-w-0 flex items-center gap-1.5 bg-slate-900 px-2.5 sm:px-3 py-1.5 rounded-2xl border border-slate-800 text-sm">
+            <span className="hidden sm:inline text-slate-400">Branch:</span>
             {canSwitchBranch ? (
-              <select aria-label="Branch" value={currentBranch} onChange={(e) => setCurrentBranch(e.target.value)} className="bg-transparent font-medium focus:outline-none cursor-pointer">
+              <select aria-label="Branch" value={currentBranch} onChange={(e) => setCurrentBranch(e.target.value)} className="bg-transparent font-medium focus:outline-none cursor-pointer max-w-[5.5rem] sm:max-w-none">
                 {branches.map(b => <option key={b.id} value={b.id} className="bg-slate-900">{b.name}</option>)}
               </select>
             ) : (
-              <span className="font-medium">{branchName || 'Not assigned'}</span>
+              <span className="font-medium truncate max-w-[5.5rem] sm:max-w-none">{branchName || 'Not assigned'}</span>
             )}
           </div>
         </div>
 
         {/* Status & Controls */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1.5 sm:gap-4 shrink-0">
           {/* Currency Switcher (a currency is enabled once an admin sets its rate) */}
-          <div className="flex bg-slate-900 rounded-2xl border border-slate-700 p-0.5 text-sm">
+          <div className="flex bg-slate-900 rounded-2xl border border-slate-700 p-0.5 text-xs sm:text-sm">
             {(['USD', 'ZiG', 'ZAR'] as const).map(curr => {
               const usable = curr === 'USD' || exchangeRates[curr] > 0;
               return (
                 <button key={curr} disabled={!usable} onClick={() => setCurrentCurrency(curr)}
                   title={usable ? undefined : 'An administrator has not set this exchange rate yet'}
-                  className={`px-4 py-1.5 rounded-[14px] font-medium transition-all ${currentCurrency === curr ? 'bg-sky-500 text-white shadow' : usable ? 'hover:bg-slate-800 text-slate-400' : 'text-slate-600 cursor-not-allowed'}`}>
+                  className={`px-2 sm:px-4 py-1.5 rounded-[14px] font-medium transition-all ${currentCurrency === curr ? 'bg-sky-500 text-white shadow' : usable ? 'hover:bg-slate-800 text-slate-400' : 'text-slate-600 cursor-not-allowed'}`}>
                   {curr}
                 </button>
               );
@@ -773,14 +771,14 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
           </div>
 
           {/* Connection Status */}
-          <div className={`px-3.5 py-1 rounded-2xl flex items-center gap-2 text-xs font-medium ${isOffline ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
-            {isOffline ? <><AlertTriangle size={14} /> OFFLINE</> : 'ONLINE'}
+          <div className={`px-2 sm:px-3.5 py-1 rounded-2xl flex items-center gap-2 text-xs font-medium ${isOffline ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+            {isOffline ? <><AlertTriangle size={14} /><span className="hidden sm:inline"> OFFLINE</span></> : <span className="hidden sm:inline">ONLINE</span>}
             <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
           </div>
 
           {/* User Profile */}
-          <div className="flex items-center gap-3 pl-4 border-l border-slate-800">
-            <div className="text-right text-sm">
+          <div className="flex items-center gap-3 pl-1 sm:pl-4 sm:border-l border-slate-800">
+            <div className="hidden sm:block text-right text-sm">
               <div className="font-semibold" data-testid="user-name">{profile.fullName}</div>
               <div className="text-[10px] text-slate-400" data-testid="user-role">{ROLE_LABELS[role]}</div>
             </div>
@@ -799,20 +797,12 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
       {/* Sidebar + Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar Navigation (only the pages this role may open) */}
-        <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col py-4">
+        <div className="hidden md:flex w-64 bg-slate-900 border-r border-slate-800 flex-col py-4">
           <div className="px-5 pb-4">
             <div className="text-xs uppercase tracking-[1px] text-slate-500 mb-3 px-3">MENU</div>
           </div>
 
-          {[
-            { id: 'dashboard', label: 'Dashboard', icon: Home },
-            { id: 'pos', label: 'Smart POS', icon: ShoppingCart },
-            { id: 'inventory', label: 'Inventory', icon: Package },
-            { id: 'debtors', label: 'Debtors', icon: Users },
-            { id: 'reports', label: 'Reports', icon: TrendingUp },
-            { id: 'staff', label: 'Staff', icon: Users },
-            { id: 'settings', label: 'Settings', icon: Settings },
-          ].filter(item => visibleTabs.includes(item.id as Tab)).map(item => {
+          {NAV_ITEMS.filter(item => visibleTabs.includes(item.id)).map(item => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
@@ -831,16 +821,30 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
           </div>
         </div>
 
+        {/* Bottom navigation on phones */}
+        <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-900/95 backdrop-blur border-t border-slate-800 flex overflow-x-auto pb-[env(safe-area-inset-bottom)]">
+          {NAV_ITEMS.filter(item => visibleTabs.includes(item.id)).map(item => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button key={item.id} onClick={() => goTo(item.id)} data-testid={`mnav-${item.id}`}
+                className={`flex-1 min-w-[4.25rem] flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium ${isActive ? 'text-sky-400' : 'text-slate-400'}`}>
+                <Icon size={21} /> {item.label.replace('Smart ', '')}
+              </button>
+            );
+          })}
+        </nav>
+
         {/* Main Content Area */}
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 min-w-0 overflow-auto p-4 pb-24 sm:p-6 sm:pb-24 md:p-8">
           <AnimatePresence mode="wait">
 
             {/* DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div>
-                <div className="flex items-end justify-between mb-9">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-6 sm:mb-9">
                   <div>
-                    <div className="text-4xl font-semibold tracking-[-1.4px]">{greeting}, {profile.fullName.split(' ')[0]}.</div>
+                    <div className="text-3xl sm:text-4xl font-semibold tracking-[-1.4px]">{greeting}, {profile.fullName.split(' ')[0]}.</div>
                     <div className="text-lg text-slate-400">{branchName} • {format(new Date(), 'EEEE, dd MMMM yyyy')}</div>
                   </div>
                   {canAccessTab(role, 'pos') && (
@@ -940,22 +944,22 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
 
             {/* SMART POS TERMINAL */}
             {activeTab === 'pos' && (
-              <div className="flex gap-6 h-[calc(100vh-7.5rem)]">
-                {/* Products Grid */}
-                <div className="flex-1 flex flex-col">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <div className="text-3xl font-semibold tracking-tight">Smart POS Terminal</div>
-                      <div className="text-sm text-slate-400">Touchscreen • Barcode Ready</div>
-                    </div>
-                    <div className="flex gap-3">
-                      <button onClick={startScanner} className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-sm font-medium"><ScanLine size={18} /> SCAN BARCODE</button>
-                      <input type="text" value={searchTerm} placeholder="Search or enter barcode..." onChange={e => setSearchTerm(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && searchTerm.length > 3) manualBarcodeEntry(searchTerm); }} className="bg-slate-900 border border-slate-700 px-5 py-2.5 rounded-2xl w-72 placeholder:text-slate-400" />
-                    </div>
+              <div className="flex flex-col lg:h-[calc(100vh-7.5rem)]">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+                  <div>
+                    <div className="text-2xl sm:text-3xl font-semibold tracking-tight">Smart POS Terminal</div>
+                    <div className="text-sm text-slate-400">Scan a barcode to sell</div>
                   </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => { setLastScan(null); setShowScanner(true); }} className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-sky-600 hover:bg-sky-500 text-sm font-semibold"><ScanLine size={18} /> SCAN BARCODE</button>
+                    <input type="text" value={searchTerm} placeholder="Search or enter barcode..." onChange={e => setSearchTerm(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitSearch(); }} className="flex-1 min-w-0 bg-slate-900 border border-slate-700 px-5 py-2.5 rounded-2xl sm:w-72 placeholder:text-slate-400" />
+                  </div>
+                </div>
 
+                <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 flex-1 min-h-0">
+                <div className="order-2 lg:order-1 flex-1 min-h-0 flex flex-col">
                   {/* Products Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 overflow-auto pb-6 flex-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 lg:overflow-auto pb-6 flex-1">
                     {filteredProducts.map(product => {
                       const price = convertPrice(product.sellingPrice);
                       const inStock = product.stock > 0;
@@ -980,7 +984,7 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
                 </div>
 
                 {/* Cart Sidebar */}
-                <div className="w-96 bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col">
+                <div className="order-1 lg:order-2 w-full lg:w-96 bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 flex flex-col max-h-[75vh] lg:max-h-none">
                   <div className="flex justify-between mb-5 items-center">
                     <div><span className="font-semibold text-2xl">Cart</span> <span className="text-sky-400 text-sm">({cartCount})</span></div>
                     <button onClick={clearCart} className="text-xs px-4 py-1 text-red-400">Clear</button>
@@ -1028,22 +1032,24 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
                     <button disabled={cart.length === 0} onClick={initiateCheckout} className="touch-btn w-full bg-emerald-600 disabled:bg-slate-700 text-white py-4 font-semibold rounded-2xl text-lg">CHECKOUT &amp; PAY</button>
                   </div>
                 </div>
+                </div>
               </div>
             )}
 
             {/* INVENTORY */}
             {activeTab === 'inventory' && (
               <div>
-                <div className="flex justify-between mb-7 items-center">
-                  <div><div className="text-4xl font-semibold tracking-tight">Inventory Management</div><div className="text-sm text-slate-400 mt-1">Stock • Pricing • Suppliers • Barcode{!canEditInventory && ' • View only'}</div></div>
-                  <div className="flex gap-3">
-                    {canEditInventory && <button onClick={openAddProduct} className="px-5 py-2.5 bg-white text-black font-medium rounded-2xl flex gap-2 items-center"><Plus size={18}/> Add Product</button>}
+                <div className="flex flex-col gap-4 sm:flex-row sm:justify-between mb-7 sm:items-center">
+                  <div><div className="text-3xl sm:text-4xl font-semibold tracking-tight">Inventory Management</div><div className="text-sm text-slate-400 mt-1">Stock • Pricing • Suppliers • Barcode{!canEditInventory && ' • View only'}</div></div>
+                  <div className="flex flex-wrap gap-3">
+                    {canEditInventory && <button onClick={() => setShowReceive(true)} className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-2xl flex gap-2 items-center"><PackagePlus size={18}/> Scan to Add Stock</button>}
+                    {canEditInventory && <button onClick={() => openAddProduct()} className="px-5 py-2.5 bg-white text-black font-medium rounded-2xl flex gap-2 items-center"><Plus size={18}/> Add Product</button>}
                     <button onClick={exportInventoryCSV} className="px-5 py-2.5 bg-slate-800 border border-slate-700 rounded-2xl flex gap-2"><Download size={17} /> Export CSV</button>
                   </div>
                 </div>
 
-                <div className="glass rounded-3xl overflow-hidden border border-slate-800">
-                  <table className="w-full data-table">
+                <div className="glass rounded-3xl overflow-x-auto border border-slate-800">
+                  <table className="w-full min-w-[40rem] data-table">
                     <thead className="bg-slate-900"><tr className="border-b border-slate-800 text-left text-slate-400">
                       <th className="pl-8 py-4">Product</th><th>SKU / Barcode</th><th>Price (USD)</th><th>Stock</th><th>Reorder</th><th>Category</th><th></th>
                     </tr></thead>
@@ -1280,21 +1286,58 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
         )}
       </AnimatePresence>
 
-      {/* SCANNER MODAL */}
-      <AnimatePresence>
-        {showScanner && (
-          <div className="fixed inset-0 z-[80] bg-black/90 flex items-center justify-center p-8" onClick={() => stopScanner()}>
-            <div className="max-w-[440px] w-full text-center" onClick={e => e.stopPropagation()}>
-              <div className="font-medium mb-2 text-white tracking-tight text-2xl">Barcode Scanner</div>
-              <div className="text-sky-400 text-sm mb-6">Point camera at product barcode</div>
-              
-              <div id="scanner-container" className="bg-black rounded-3xl overflow-hidden aspect-video shadow-2xl mb-6"></div>
-              
-              <button onClick={() => stopScanner()} className="px-9 py-3 rounded-2xl bg-white text-black font-semibold">CLOSE SCANNER</button>
+      {/* SCAN-TO-SELL */}
+      {showScanner && (
+        <div role="dialog" aria-label="Scan to sell" className="fixed inset-0 z-[80] bg-slate-950 overflow-auto">
+          <div className="max-w-xl mx-auto p-4 pb-40">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-2xl font-semibold tracking-tight">Scan to sell</div>
+                <div className="text-sm text-slate-400">Point at a barcode. Each scan adds one to the cart.</div>
+              </div>
+              <button aria-label="Close scanner" onClick={() => setShowScanner(false)} className="p-2 rounded-xl hover:bg-slate-900"><X /></button>
+            </div>
+
+            <BarcodeScanner onScan={handleBarcode} />
+
+            {lastScan && (
+              <div role="status" data-testid="last-scan" className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${
+                lastScan.kind === 'ok' ? 'bg-emerald-950/70 border-emerald-800 text-emerald-300'
+                  : lastScan.kind === 'warn' ? 'bg-orange-950/70 border-orange-800 text-orange-300'
+                    : 'bg-red-950/70 border-red-800 text-red-300'}`}>{lastScan.text}</div>
+            )}
+
+            <div className="mt-4 space-y-2">
+              {cart.length === 0 && <div className="text-center text-slate-500 py-6 border border-dashed border-slate-800 rounded-2xl">Cart is empty. Scan a product.</div>}
+              {cart.map(item => (
+                <div key={item.id} data-testid={`scan-cart-${item.barcode}`} className="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-2xl p-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{item.name}</div>
+                    <div className="text-xs text-slate-400">{currencySymbol}{convertPrice(item.sellingPrice).toFixed(2)} each</div>
+                  </div>
+                  <button aria-label={`Less ${item.name}`} onClick={() => item.quantity > 1 ? updateCartQuantity(item.id, item.quantity - 1) : removeFromCart(item.id)} className="p-2 rounded-xl bg-slate-800"><Minus size={16} /></button>
+                  <div className="w-8 text-center tabular-nums font-semibold">{item.quantity}</div>
+                  <button aria-label={`More ${item.name}`} onClick={() => updateCartQuantity(item.id, item.quantity + 1)} className="p-2 rounded-xl bg-slate-800"><Plus size={16} /></button>
+                </div>
+              ))}
             </div>
           </div>
-        )}
-      </AnimatePresence>
+
+          <div className="fixed bottom-0 inset-x-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 p-4">
+            <div className="max-w-xl mx-auto flex gap-3">
+              <button onClick={() => setShowScanner(false)} className="px-5 py-3.5 rounded-2xl border border-slate-700">Keep browsing</button>
+              <button disabled={cart.length === 0} onClick={() => { setShowScanner(false); initiateCheckout(); }} className="flex-1 py-3.5 rounded-2xl bg-emerald-600 disabled:bg-slate-700 font-semibold">
+                Charge {currencySymbol}{cartTotal.toFixed(2)} ({cartCount} item{cartCount === 1 ? '' : 's'})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SCAN-TO-RECEIVE STOCK */}
+      {showReceive && canEditInventory && (
+        <ReceiveStock products={products} userId={profile.id} onClose={() => setShowReceive(false)} onChanged={refreshProducts} />
+      )}
 
       {/* RECEIPT MODAL */}
       <AnimatePresence>
