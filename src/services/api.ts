@@ -182,7 +182,7 @@ export async function createDebtor(d: {
 }): Promise<void> {
   const { error } = await supabase.from('debtors').insert([{
     name: d.name, phone: d.phone, address: d.address || null,
-    national_id: d.nationalId || null, notes: d.notes || null, branch_id: d.branchId, total_owed: 0,
+    national_id: d.nationalId || null, notes: d.notes || null, branch_id: d.branchId,
   }]);
   if (error) {
     if ((error as any).code === '23505') throw new Error('A debtor with that national ID already exists.');
