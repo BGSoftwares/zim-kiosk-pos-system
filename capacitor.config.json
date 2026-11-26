@@ -1,0 +1,7 @@
+{
+  "appId": "zw.co.zimkiosk.pos",
+  "appName": "ZIM KIOSK",
+  "webDir": "dist",
+  "android": { "allowMixedContent": false },
+  "server": { "androidScheme": "https" }
+}

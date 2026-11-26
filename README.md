@@ -50,6 +50,31 @@ role's discount limit, checks and locks stock, and writes the sale, items, stock
 credit sales) the customer's debt in **one transaction**. A failure rolls everything back.
 Reports and debts are kept in USD so sales in different currencies add up correctly.
 
+## Scanning (selling and receiving stock)
+
+- **Selling:** Smart POS → **Scan barcode**. The camera stays open; every scan adds one to the cart
+  (scan again for more), with a beep/vibration, then **Charge**. USB/Bluetooth scanners also work
+  on the POS page without opening the camera. An unknown barcode shows an error (managers get an
+  "Add product" shortcut with the barcode prefilled).
+- **Receiving stock:** Inventory → **Scan to Add Stock**. Scan each delivered item (repeat scans
+  add quantity), adjust quantities, then **Save stock**. An unknown barcode opens a quick
+  "new product" form. Stock only changes on Save, in one transaction (`receive_stock`).
+- Users who already ran `supabase_migration_roles.sql` must run it again (it is idempotent) to
+  get `receive_stock`.
+
+## Android app (APK)
+
+The same app is wrapped with Capacitor. The APK is built by GitHub Actions
+(`.github/workflows/android.yml`), because it needs the Android SDK:
+
+1. In the GitHub repo: **Settings → Secrets and variables → Actions**, add `VITE_SUPABASE_URL`
+   and `VITE_SUPABASE_ANON_KEY`.
+2. **Actions → Android APK → Run workflow**.
+3. Download the `zim-kiosk-debug-apk` artifact, unzip, copy `app-debug.apk` to the phone and open
+   it (allow "install unknown apps"). Grant the camera permission on first scan.
+
+This is a debug-signed APK, fine for your own shops. A Play Store release needs your own keystore.
+
 ## Scripts
 
 ```bash

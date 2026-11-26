@@ -141,6 +141,13 @@ export async function saveProduct(
   }
 }
 
+/** Add delivered stock for many products in one atomic call. Returns the number of units added. */
+export async function receiveStock(items: { product_id: string; quantity: number }[], note?: string): Promise<number> {
+  const { data, error } = await supabase.rpc('receive_stock', { p_items: items, p_note: note || null });
+  if (error) throw error;
+  return num(data);
+}
+
 export async function deleteProduct(id: string): Promise<void> {
   const { error } = await supabase.from('products').delete().eq('id', id);
   if (error) {
