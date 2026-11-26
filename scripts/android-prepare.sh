@@ -9,4 +9,7 @@ add 'android.permission.CAMERA' '    <uses-permission android:name="android.perm
 add 'android.permission.VIBRATE' '    <uses-permission android:name="android.permission.VIBRATE" />'
 add 'android.hardware.camera"' '    <uses-feature android:name="android.hardware.camera" android:required="false" />'
 grep -q 'android.permission.INTERNET' "$M" || sed -i "s#<application#    <uses-permission android:name=\"android.permission.INTERNET\" />\n    <application#" "$M"
-echo "Manifest ready:"; grep -E 'uses-(permission|feature)' "$M"
+# Keep the login session out of device backups, and never allow plain-http traffic.
+sed -i 's/android:allowBackup="true"/android:allowBackup="false"/' "$M"
+grep -q 'usesCleartextTraffic' "$M" || sed -i 's#<application#<application android:usesCleartextTraffic="false"#' "$M"
+echo "Manifest ready:"; grep -E 'uses-(permission|feature)|allowBackup|usesCleartext' "$M"

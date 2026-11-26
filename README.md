@@ -50,6 +50,33 @@ role's discount limit, checks and locks stock, and writes the sale, items, stock
 credit sales) the customer's debt in **one transaction**. A failure rolls everything back.
 Reports and debts are kept in USD so sales in different currencies add up correctly.
 
+## Database security
+
+Run these in the Supabase SQL editor, in order: `supabase_schema.sql`, `supabase_migration_roles.sql`,
+`supabase_migration_security.sql` (all safe to re-run). Note: this project uses Supabase's
+PostgreSQL, not MySQL.
+
+What the security migration enforces in the database itself (not just the app):
+
+- The public (anon) key cannot read or write any table or call any function.
+- Logged-in users get only the operations and columns the app needs. Sales, sale lines and debtor
+  history are read-only from the app; they are written only by `create_sale`,
+  `record_debtor_payment` and `receive_stock`.
+- Debtor balances cannot be edited directly (only through a recorded payment or a credit sale).
+- Stock ledger rows must be signed by the user who writes them and cannot be edited or deleted.
+- The system can never be left without an active admin.
+- Negative prices, stock and amounts are rejected.
+- `audit_log` (admins only) records product/price changes, staff role changes, exchange-rate and
+  branch changes, and debtor edits, with who did it.
+
+Also set these in the Supabase dashboard (they cannot be set from SQL):
+
+- Authentication → Providers → Email: minimum password length 12, and turn on leaked-password
+  protection (Pro plan) if available. Turn off "Confirm email" only if you trust the signup list.
+- Authentication → Rate limits: keep the defaults or tighten sign-in attempts.
+- Turn on Point-in-Time Recovery / daily backups, and keep the **service_role** key out of the
+  app, the repository and the APK. Only the anon key belongs in `VITE_SUPABASE_ANON_KEY`.
+
 ## Scanning (selling and receiving stock)
 
 - **Selling:** Smart POS → **Scan barcode**. The camera stays open; every scan adds one to the cart
