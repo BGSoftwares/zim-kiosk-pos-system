@@ -41,7 +41,7 @@ begin
   values (
     new.id,
     new.email,
-    coalesce(new.raw_user_meta_data->>'full_name', split_part(coalesce(new.email, ''), '@', 1)),
+    left(coalesce(new.raw_user_meta_data->>'full_name', split_part(coalesce(new.email, ''), '@', 1)), 100),
     case when v_first then 'admin' else 'cashier' end,
     (select id from branches order by created_at limit 1),
     v_first
