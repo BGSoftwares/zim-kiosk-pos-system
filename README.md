@@ -109,3 +109,7 @@ npm run dev         # development server
 npm run typecheck   # TypeScript check
 npm run build       # production build
 ```
+
+---
+
+Developed by **BG Devops**. Contact: **0784654328**.

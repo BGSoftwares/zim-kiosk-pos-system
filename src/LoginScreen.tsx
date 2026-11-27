@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import DeveloperSignature from './components/DeveloperSignature';
 import { Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { validateEmail } from './services/auth';
@@ -94,6 +95,7 @@ export default function LoginScreen() {
           <p className="mt-6 text-center text-xs text-slate-500">
             Forgot your password? Ask your administrator to reset it.
           </p>
+          <DeveloperSignature className="mt-5 pt-4 border-t border-slate-800 text-center" />
         </form>
       </div>
     </div>

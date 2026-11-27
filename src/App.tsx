@@ -11,6 +11,7 @@ import { format, subDays } from 'date-fns';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginScreen from './LoginScreen';
 import BarcodeScanner from './components/BarcodeScanner';
+import DeveloperSignature from './components/DeveloperSignature';
 import ReceiveStock from './components/ReceiveStock';
 import { scanFeedback, type ScanKind } from './lib/scanFeedback';
 import { useBarcodeWedge } from './lib/useBarcodeWedge';
@@ -818,6 +819,7 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
           <div className="mx-5 mt-2 px-4 py-4 border-t border-slate-800 text-xs text-slate-500">
             <div>{ROLE_LABELS[role]}</div>
             <div>{branchName || 'No branch assigned'}</div>
+            <DeveloperSignature className="mt-4 pt-3 border-t border-slate-800" />
           </div>
         </div>
 
@@ -1206,6 +1208,14 @@ function ZIMKioskApp({ profile }: { profile: Profile }) {
             {activeTab === 'settings' && (
               <div className="max-w-3xl">
                 <div className="text-4xl tracking-tight font-semibold mb-9">Settings</div>
+
+                <div className="glass p-6 rounded-3xl mb-7 flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <div className="font-semibold">About ZIM KIOSK</div>
+                    <div className="text-sm text-slate-400">Need help or a change? Contact the developer.</div>
+                  </div>
+                  <DeveloperSignature className="text-sm" />
+                </div>
 
                 <div className="glass p-9 rounded-3xl mb-7">
                   <div className="font-semibold mb-4">Your Account</div>
